@@ -21,7 +21,7 @@ classdef CameraController < handle
     
     properties (Access = public, Constant)
         % default camera settings
-        DFT_KIN_MODE = 4; % fast kinetics by default (3 is regular kinetics)
+        DFT_KIN_MODE = 3; % fast kinetics by default (3 is regular kinetics)
         
         % Andor status codes
         DRV_SUCCESS = 20002;
@@ -109,7 +109,7 @@ classdef CameraController < handle
             if nargin < 4 % TURN OFF
                 fullPathName = ''; % we still need to set the return value;
                 if setAcqMode(5) ~= obj.DRV_SUCCESS % set continuous acquire (5)
-                    MException('MScope:AndorErr','Spool off error').throw;
+                    MException('MScope:AndorErr','Continuous acquire error in spool off').throw;
                 end
                 if spoolOff ~= obj.DRV_SUCCESS
                     MException('MScope:AndorErr','Spool off error').throw;
@@ -133,13 +133,17 @@ classdef CameraController < handle
                     obj.SpoolAppend = obj.SpoolAppend + 1; % try a new name then
                     fullPathName = fullfile(path,sprintf('%s_%i',name,obj.SpoolAppend));
                 end
+                
+                % switch to kinetic series acquisition mode
+                if setAcqMode(obj.DFT_KIN_MODE) ~= obj.DRV_SUCCESS
+                    MException('MScope:AndorErr','Spool set error').throw;
+                end
+                
                 % switch on spooling
                 if spoolOn(fullPathName) ~= obj.DRV_SUCCESS
                     MException('MScope:AndorErr','Spool set error').throw;
                 end
-                if setAcqMode(obj.DFT_KIN_MODE) ~= obj.DRV_SUCCESS
-                    MException('MScope:AndorErr','Spool set error').throw;
-                end
+
                 % define how many frames to spool
                 numFrames = floor(numFrames); % just in case we get asked to
                 numFrames = max(numFrames,1); % spool a silly number of frames
