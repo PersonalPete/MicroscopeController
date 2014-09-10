@@ -22,12 +22,15 @@ classdef SimpleMscopeGUI < handle
         
         CamStatH;
         CamTempH;
+        FrAcqH; % how many frames acquired
         FrameRateH;
         MessageH;
         
         MinFrameH; % display for the minimum frame time
         ExpPctH; % display for the percent of the frame time that is exposing - CW only
         
+        SinglePlotAxisH; % the big simgle plot of the camera image
+        SingleImageH;
         
         % handles to user interface buttons and controls
         SpoolPathH;
@@ -36,24 +39,44 @@ classdef SimpleMscopeGUI < handle
         
         AlexOnH;
         CwOnH;
+        AlexSelectionH;
         
-        SetFrameH;
+        SetFrameH;  % for the number of frames
         
         StartVideoH;
         StartCaptH;
         StopCaptH;
+        
+        % Brightness controls
+        MinH;
+        RangeH;
+        AutoH;
         
         % information about the current setup (defaults are defaults)
         SpoolPath = pwd;
         SpoolName = 'DefaultFileName';
         SpoolFrames = 100;
         
-        AlexMode = 1; % this is set to be the default on construction
+        AlexMode = 0; % this is set to be the default on construction
+        AlexSelection = 1; % this is which alex type (R-G or R-G-N etc...) is selected
+        % 1:Green-Red 2:Green-Red-NIR 3:Green-NIR 4:Red-NIR 5:NIR-Red-Green
         
         FrameTime = 100; % (\ms) frame time actually set
         
         % Flag for state
         State = 0; % 0 is idle, 1 is video mode, 2 is spool and video
+        AllowedToStop = 1; % set to 0 whilst acquisition is being started, so timer doesn't stop acquisition prematurely
+        % Display setup for video
+        LatestImageData; % the most recent frame (so we can rescale a frozen frame)
+        
+        ImageLimits = [0 1];
+        numXPix = 512;
+        numYPix = 512;
+        
+        % CONSTANTS
+        AUTO_FACTOR = 2; % auto scales between the minimum and AUTO_FACTOR*(mean(data - min)) + min
+        
+        MAX_DATA = 2^16 - 1; % for the 16-bit data we are taking
         
         % define some useful constants for customising the look
         FigPos = [0.0, 0.4, 0.5, 0.6]; % outer position of the main figure
@@ -66,6 +89,9 @@ classdef SimpleMscopeGUI < handle
         
         COLOR_INPUT_BGD = [0.6 1.0 0.6];
         COLOR_INPUT_TEXT = [0.0 0.0 0.0];
+        
+        COLOR_AUTO_BGD = [0.8 0.0 0.0];
+        COLOR_AUTO_TEXT = [1.0 1.0 1.0];
         
         COLOR_INFO_BGD = [0.2 0.2 0.2];
         COLOR_INFO_TEXT = [1.0 1.0 1.0];
@@ -107,6 +133,7 @@ classdef SimpleMscopeGUI < handle
                 %% MAIN FIGURE
                 obj.MainFigH = figure('CloseRequestFcn',@obj.cleanUp,...
                     'Color',obj.COLOR_BGD,...
+                    'ColorMap',gray(obj.MAX_DATA),...
                     'DockControls','off',...
                     'Name',class(obj),...
                     'Units','Normalized',...
@@ -114,6 +141,7 @@ classdef SimpleMscopeGUI < handle
                     'Pointer','arrow',...
                     'Renderer','OpenGL',...
                     'Toolbar','none',...
+                    'MenuBar','none',...
                     'Visible','off');
                 %% STATUS INDICATORS
                 % build the camera status indicator
@@ -153,6 +181,20 @@ classdef SimpleMscopeGUI < handle
                     'BackgroundColor',obj.COLOR_STAT_OK,...
                     'Units','Normalized',...
                     'Position',[0.2, 0.0, 0.1, 0.025],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INFO,...
+                    'FontSize',0.95,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_STAT_TEXT,...
+                    'String','-',...
+                    'Visible','on');
+                
+                obj.FrAcqH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','text',...
+                    'BackgroundColor',obj.COLOR_STAT_OK,...
+                    'Units','Normalized',...
+                    'Position',[0.2, 0.025, 0.1, 0.025],...
+                    'HorizontalAlignment','center',... % for its text
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.95,...
@@ -256,11 +298,27 @@ classdef SimpleMscopeGUI < handle
                     'ForegroundColor',obj.COLOR_CW_TEXT,...
                     'String','CW',...
                     'Visible','on');
+             
+                obj.AlexSelectionH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.selectAlex,...
+                    'Style','popupmenu',...
+                    'String',{'Green-Red' 'Green-Red-NIR' 'Green-NIR' 'Red-NIR' 'NIR-Red-Green'},...
+                    'Min',1,...
+                    'Max',1,...
+                    'Value',obj.AlexSelection,...
+                    'BackgroundColor',obj.COLOR_ALEX_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.80, 0.80, 0.20, 0.10],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.25,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_CW_TEXT,...
+                    'Visible','on');
                 
                 % apply the default of alex or not
                 if obj.AlexMode, obj.setAlexMode(obj.AlexOnH); end
                 if ~obj.AlexMode, obj.setCwMode(obj.CwOnH); end
-                
                 
                 %% FRAME TIMINGS
                 
@@ -311,6 +369,49 @@ classdef SimpleMscopeGUI < handle
                 
                 % and update them so we are displaying the truth
                 obj.updateTimes;
+                
+                %% IMAGE BRIGHTNESS CONTROLS
+                % set the minimum displayed value
+                obj.MinH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','slider',...
+                    'Min',0,...
+                    'Max',obj.MAX_DATA-2,...
+                    'SliderStep',[0.01 0.1],... % minor and major steps
+                    'BackgroundColor',obj.COLOR_INPUT_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.30 0.025 0.2 0.025],...
+                    'callback',@obj.setMinImage,...
+                    'TooltipString','Display minimum',...
+                    'Visible','on');
+                
+                obj.RangeH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','slider',...
+                    'Min',0,...
+                    'Max',1,... % only zero and one because we are taking the range as the fraction of the remaining data values to not truncate
+                    'SliderStep',[1e-3 0.1],... % minor and major steps
+                    'BackgroundColor',obj.COLOR_INPUT_BGD,...
+                    'ForegroundColor',[0 0 0],...
+                    'Units','Normalized',...
+                    'Position',[0.50 0.025 0.2 0.025],...
+                    'callback',@obj.setRangeImage,...
+                    'TooltipString','Display range',...
+                    'Visible','on');
+                
+                obj.AutoH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','pushbutton',...
+                    'SliderStep',[1e-4 1],... % minor and major steps
+                    'BackgroundColor',obj.COLOR_AUTO_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.70 0.025 0.1 0.025],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.9,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_AUTO_TEXT,...
+                    'String','AUTO',...
+                    'Visible','on',...
+                    'callback',@obj.autoscaleImage);
+                
                 
                 %% ACQUIRING
                 % starting video
@@ -366,6 +467,26 @@ classdef SimpleMscopeGUI < handle
                     'String','STOP',...
                     'Visible','on');
                 
+                %% DISPLAY FOR ACQUIRED IMAGE
+                % axis to plot into
+                obj.SinglePlotAxisH = axes('Parent',obj.MainFigH,...
+                    'color','none',...
+                    'visible','off',...
+                    'DataAspectRatio',[1 1 1],...
+                    'DrawMode','fast',...
+                    'Position',[0.00 0.05 0.80, 0.90],...
+                    'Units','Normalized',...
+                    'XTick',[],...
+                    'YTick',[],...
+                    'Xlim',[0 obj.numXPix],...
+                    'Ylim',[0 obj.numYPix],...
+                    'CLim',obj.ImageLimits);
+                
+                obj.SingleImageH = image('Parent',obj.SinglePlotAxisH,...
+                    'CDataMapping','scaled',...
+                    'CData',0);
+                % CData will be defined when we have some
+                
                 %% TIMERS FOR UPDATING
                 % Status updates when IDLE
                 obj.TimerIdle = timer('Period',obj.TIMER_IDLE_PERIOD,...
@@ -377,7 +498,7 @@ classdef SimpleMscopeGUI < handle
                     'BusyMode','drop',... % only one timer queued
                     'ExecutionMode','fixedRate',...
                     'TimerFcn',@(~,~)obj.updateAcq,...
-                    'StopFcn',@(~,~)set([obj.FrameRateH; obj.MessageH],'String','-','BackgroundColor',obj.COLOR_STAT_OK));
+                    'StopFcn',@(~,~)set([obj.FrameRateH; obj.MessageH; obj.FrAcqH],'String','-','BackgroundColor',obj.COLOR_STAT_OK));
                 
                 start(obj.TimerIdle); % only start the idle timer because we always start idle
                 
@@ -411,9 +532,11 @@ classdef SimpleMscopeGUI < handle
             if stateFlag
                 % we are acquiring
                 set(handlesToInactivate,'enable','off'); 
+                set(obj.AlexSelectionH,'enable','off');
             else
                 % we have finished acquiring
                 set(handlesToInactivate,'enable','on');
+                if obj.AlexMode, set(obj.AlexSelectionH,'enable','on'); end
             end
         end
         
@@ -422,9 +545,11 @@ classdef SimpleMscopeGUI < handle
         
         %% updater for idle timer
         function updateIdle(obj)
-            obj.updateStat; % Always update the status indicator
-            statusNow = obj.CamCon.getStringStatus;
             try
+            obj.updateStat; % Always update the status indicator
+            set(obj.SinglePlotAxisH,'CLim',obj.ImageLimits); % update the image scaling
+            statusNow = obj.CamCon.getStringStatus;
+            
                 if strcmp(statusNow,'IDLE')
                     obj.updateTemp;
                     obj.updateTimes;
@@ -440,14 +565,26 @@ classdef SimpleMscopeGUI < handle
         
         %% updater for acq timer
         function updateAcq(obj)
-            obj.updateStat; % always update the status
             try
+            obj.updateStat; % always update the status
+            set(obj.SinglePlotAxisH,'CLim',obj.ImageLimits); % update the image scaling
+            
                 statusNow = obj.CamCon.getStringStatus;
                 if strcmp(statusNow,'ACQUIRE')
                     % update the frame rate and temperature indicators
                     obj.updateTemp;
                     obj.updateFrameRate;
-                elseif strcmp(statusNow,'IDLE')
+                    
+                    % update the displayed image
+                    [codeStr, imageData, latestNo] = obj.CamCon.getLatestData;
+                    if strcmp(codeStr,'OK')
+                        set(obj.SingleImageH,'CData',imageData);
+                        obj.LatestImageData = imageData;
+                        % scale the image
+                        set(obj.FrAcqH,'String',sprintf('%i',latestNo),'BackgroundColor',obj.COLOR_STAT_WARN);
+                    end
+                    
+                elseif strcmp(statusNow,'IDLE') && obj.AllowedToStop
                     % make sure the start acquisition buttons are both
                     % available
                     obj.setGraphicsAcquiring(0);
@@ -469,7 +606,7 @@ classdef SimpleMscopeGUI < handle
         end
         
         %% other updaters
-        
+              
         function updateFrameRate(obj)
             % make sure the frame rate indicator says the correct frame rate
             currentRate = 1/get(obj.TimerAcq,'InstantPeriod');
@@ -604,6 +741,7 @@ classdef SimpleMscopeGUI < handle
             end            
             
             set(src,'enable','inactive');
+            set(obj.AlexSelectionH,'enable','on');
             obj.CamCon.setAcqMode(1 + obj.DFT_TRIGGER_FAST); % set alex mode on the camera (external triggering)
             obj.AlexMode = 1;
             obj.updateTimes; % since the exposure percentage is now meaningless
@@ -619,6 +757,7 @@ classdef SimpleMscopeGUI < handle
             end   
             
             set(src,'enable','inactive');
+            set(obj.AlexSelectionH,'enable','off');
             obj.CamCon.setAcqMode(0); % set cw mode on the camera (internal triggering)
             % make sure the camera is set to the same frame time as before
             obj.FrameTime = max(obj.FrameTime,obj.CamCon.getMinRepeatTime*1000);
@@ -627,6 +766,17 @@ classdef SimpleMscopeGUI < handle
             obj.updateTimes; % since we care about the exposure percentage
             set(obj.AlexOnH,'Value',0,'enable','on');
         end
+        
+        function selectAlex(obj,src,~)
+            % for choosing between duALEX or trALEX types
+            if ~obj.AlexMode || obj.State ~=0 
+                % i.e. somehow we've entered this callback in CW mode or while not idle
+                set(src,'Value',obj.AlexSelection);
+            else
+                % set our alex type to be what the user wants
+                obj.AlexSelection = get(src,'Value');
+            end
+        end % selectAlex
         
         % callback from buttons to change camera settings
         
@@ -641,6 +791,40 @@ classdef SimpleMscopeGUI < handle
             
             obj.CamCon.disconnect; % gracefully disconnect from the camera
             delete(src); % and delete the figure
+        end
+        
+        %% CHANGING THE LOOK OF IMAGES
+        
+        function setMinImage(obj,src,~)
+            newMin = get(src,'Value');
+
+            newRange = get(src,'Value');
+            newMax = obj.ImageLimits(1) + newRange*(obj.MAX_DATA-obj.ImageLimits(1));
+            
+            newMax = max(newMax,newMin + 1);
+            obj.ImageLimits = [newMin newMax];
+        end
+        
+        function setRangeImage(obj,src,~)
+            newRange = get(src,'Value');
+            newMax = obj.ImageLimits(1) + newRange*(obj.MAX_DATA-obj.ImageLimits(1));
+            newMax = max(newMax,obj.ImageLimits(1) + 1);
+            obj.ImageLimits(2) = newMax;
+        end
+        
+        function autoscaleImage(obj,~,~)
+            mostRecentImage = obj.LatestImageData;
+            if isempty(mostRecentImage), return; end
+            newMin = min(mostRecentImage(:));
+            newMax = obj.AUTO_FACTOR*( mean(mostRecentImage(:)-newMin) ) + newMin + 1;
+            newCLim = [newMin, newMax];
+            
+            set(obj.MinH,'Value',newMin);
+            set(obj.RangeH,'Value',(newMax-newMin)/(obj.MAX_DATA-newMin)); % as a fraction of possible range
+            
+            obj.ImageLimits = newCLim;
+            
+            set(obj.SinglePlotAxisH,'CLim',newCLim);
         end
         
         %% FRAME TIME SETTING
@@ -723,6 +907,9 @@ classdef SimpleMscopeGUI < handle
         
         % Start with spooling
         function startCapt(obj,src,~)
+            
+            obj.AllowedToStop = 0;
+            
             % check the state
             if obj.State == 2 % not already spooling
                 return
@@ -780,6 +967,8 @@ classdef SimpleMscopeGUI < handle
                 start(obj.AcqTimer);
             catch
             end
+            
+            obj.AllowedToStop  = 1;
             
         end % startCapt
         

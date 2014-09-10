@@ -17,11 +17,14 @@ classdef CameraController < handle
         Acquiring; % boolean - true: currently acquiring, false: not acquiring
         Connected; % boolean - true: intialised, false: has been closed
         ShutterOpen; % boolean - true: open, false: closed
+        
+        numXPix = 512;
+        numYPix = 512;
     end
     
     properties (Access = public, Constant)
         % default camera settings
-        DFT_KIN_MODE = 3; % fast kinetics by default (3 is regular kinetics)
+        DFT_KIN_MODE = 3; % (3 is regular kinetics) - 4 doesn't seem to work
         
         % Andor status codes
         DRV_SUCCESS = 20002;
@@ -346,8 +349,21 @@ classdef CameraController < handle
                 MException('MScope:AndorErr','Error setting temp').throw;
             end
         end % setTemp
+        
+        function [codeStr, imageArray, mostRecentImNo] = getLatestData(obj)
+            % retrieves the latest image taken by the camera and an
+            % approximate number of total images acquired since start was
+            % called
+            [code, imageArray, mostRecentImNo] = getLastFrame16(obj.numXPix,obj.numYPix);
+            if code == obj.DRV_SUCCESS
+                codeStr = 'OK';
+            else
+                codeStr = 'ERR';
+            end
+        end
             
     end % of public methods
+    
     
     
     methods (Access = private)

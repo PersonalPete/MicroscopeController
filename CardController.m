@@ -7,7 +7,7 @@ classdef CardController < handle
     
     properties (Access = private)
         % where to find the LabVIEW VIs that will be run when requested
-        ViLocation = 'C:\User Data\Peter\MathWorks 2014\LabVIEW\Homemade\';
+        ViLocation = 'C:\Users\LocalAdmin\Documents\MATLAB\MicroscopeController';
         % used to make sure we only have one VI running at a time
         IsRunning = false;
         LabviewActXServer;
