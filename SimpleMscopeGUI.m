@@ -4,6 +4,9 @@ classdef SimpleMscopeGUI < handle
     
     properties (SetAccess = private)
         
+        %
+        RedPort = 'TEST';
+        
         % some defaults
         DFT_TRIGGER_FAST = 0; % set this to 1 for fast triggering
         TIMER_IDLE_PERIOD = 0.2; % (\s between updating displayed info)
@@ -11,6 +14,10 @@ classdef SimpleMscopeGUI < handle
         
         % camera controller object
         CamCon;
+        
+        % LabVIEW card / general laser controller - does the laser switching (and controls
+        % the laser power)
+        LaserCon;
         
         % timer object for real-time updating
         TimerIdle; % runs when system is idle
@@ -41,6 +48,14 @@ classdef SimpleMscopeGUI < handle
         CwOnH;
         AlexSelectionH;
         
+        GreenOnH;
+        RedOnH;
+        NIROnH;
+        
+        GreenPowerH;
+        RedPowerH;
+        NIRPowerH;
+        
         SetFrameH;  % for the number of frames
         
         StartVideoH;
@@ -69,9 +84,22 @@ classdef SimpleMscopeGUI < handle
         % Display setup for video
         LatestImageData; % the most recent frame (so we can rescale a frozen frame)
         
-        ImageLimits = [0 1];
+        ImageLimits = [90 120]; % current scaling of displayed image
         numXPix = 512;
         numYPix = 512;
+        
+        % whether a particular laser is on at the moment (not so useful
+        % during ALEX for the lasers doing the alternating)
+        GreenState = 0;
+        RedState = 0;
+        NIRState = 0;
+        
+        GreenPower = 0.1; % Fraction of laser's full power it is currently set to
+        RedPower = 0.1;
+        
+        GreenBusy = 0; % whether the particular laser is involved in the ALEX we are doing
+        RedBusy = 0;
+        NIRBusy = 0;
         
         % CONSTANTS
         AUTO_FACTOR = 2; % auto scales between the minimum and AUTO_FACTOR*(mean(data - min)) + min
@@ -102,6 +130,15 @@ classdef SimpleMscopeGUI < handle
         COLOR_CW_BGD = [1.0 0.6 0.2];
         COLOR_CW_TEXT = [0.0 0.0 0.0];
         
+        COLOR_532_BGD = [0.0 0.8 0.0];
+        COLOR_532_TEXT = [0.0 0.0 0.0];
+        
+        COLOR_640_BGD = [0.8 0.0 0.0];
+        COLOR_640_TEXT = [0.0 0.0 0.0];
+        
+        COLOR_730_BGD = [0.8 0.8 0.0];
+        COLOR_730_TEXT = [0.0 0.0 0.0];
+        
         COLOR_STAT_OK = [0.4 0.4 0.8];
         COLOR_STAT_WARN = [1.0 0.5 0.0];
         COLOR_STAT_ERR = [0.8 0.0 0.0];
@@ -128,6 +165,12 @@ classdef SimpleMscopeGUI < handle
             
             % builds our camera controller and applies default camera settings
             obj.CamCon = CameraController;
+            
+            % builds the laser/card controller - TODO: Should set up the
+            % Red laser
+            fprintf('\nConnecting to NI PCIe-6351...\n');
+            obj.LaserCon = CardController(obj.RedPort);
+            
             try % in a try-catch so we always disconnect from camera
                 % build the main figure - visibility off for now
                 %% MAIN FIGURE
@@ -298,7 +341,7 @@ classdef SimpleMscopeGUI < handle
                     'ForegroundColor',obj.COLOR_CW_TEXT,...
                     'String','CW',...
                     'Visible','on');
-             
+                
                 obj.AlexSelectionH = uicontrol('Parent',obj.MainFigH,...
                     'Callback',@obj.selectAlex,...
                     'Style','popupmenu',...
@@ -308,17 +351,120 @@ classdef SimpleMscopeGUI < handle
                     'Value',obj.AlexSelection,...
                     'BackgroundColor',obj.COLOR_ALEX_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.80, 0.80, 0.20, 0.10],...
+                    'Position',[0.80, 0.85, 0.20, 0.05],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
-                    'FontSize',0.25,...
+                    'FontSize',0.5,...
                     'FontWeight','normal',...
                     'ForegroundColor',obj.COLOR_CW_TEXT,...
                     'Visible','on');
                 
                 % apply the default of alex or not
-                if obj.AlexMode, obj.setAlexMode(obj.AlexOnH); end
-                if ~obj.AlexMode, obj.setCwMode(obj.CwOnH); end
+                if ~obj.AlexMode
+                    % Put into alex mode so we can set the type of alex
+                    obj.setAlexMode(obj.AlexOnH);
+                    obj.selectAlex(obj.AlexSelectionH);
+                    % then go into CW mode if this is the default
+                    obj.setCwMode(obj.CwOnH);
+                else
+                    obj.setAlexMode(obj.AlexOnH);
+                    obj.selectAlex(obj.AlexSelectionH);
+                end
+                
+                
+                
+                %% LASER POWERS AND ON/OFF
+                obj.GreenOnH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.toggleGreen,...
+                    'Style','togglebutton',...
+                    'String','532',...
+                    'Min',0,...
+                    'Max',1,...
+                    'Value',0,...
+                    'BackgroundColor',obj.COLOR_532_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.80, 0.80, 0.0666, 0.065],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.5,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_532_TEXT,...
+                    'Visible','on');
+                
+                obj.RedOnH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.toggleRed,...
+                    'Style','togglebutton',...
+                    'String','640',...
+                    'Min',0,...
+                    'Max',1,...
+                    'Value',0,...
+                    'BackgroundColor',obj.COLOR_640_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.8666, 0.80, 0.0666, 0.065],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.5,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_640_TEXT,...
+                    'Visible','on');
+                
+                obj.NIROnH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.toggleNIR,...
+                    'Style','togglebutton',...
+                    'String','730',...
+                    'Min',0,...
+                    'Max',1,...
+                    'Value',0,...
+                    'BackgroundColor',obj.COLOR_730_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.9333, 0.80, 0.0666, 0.065],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.5,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_730_TEXT,...
+                    'Visible','on');
+                
+                obj.GreenPowerH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.setGreenPower,...
+                    'Style','edit',...
+                    'BackgroundColor',obj.COLOR_INPUT_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.80, 0.75, 0.0666, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_INPUT_TEXT,...
+                    'String',sprintf('%.1f %%',obj.GreenPower*100),...
+                    'Visible','on');
+                
+                obj.RedPowerH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.setRedPower,...
+                    'Style','edit',...
+                    'BackgroundColor',obj.COLOR_INPUT_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.8666, 0.75, 0.0666, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_INPUT_TEXT,...
+                    'String',sprintf('%.1f %%',obj.RedPower*100),...
+                    'Visible','on');
+                
+                obj.NIRPowerH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','edit',...
+                    'BackgroundColor',obj.COLOR_INPUT_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.9333, 0.75, 0.0666, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_INPUT_TEXT,...
+                    'String',sprintf('manual'),...
+                    'Visible','on');
                 
                 %% FRAME TIMINGS
                 
@@ -531,7 +677,7 @@ classdef SimpleMscopeGUI < handle
                 obj.SetFrameH];
             if stateFlag
                 % we are acquiring
-                set(handlesToInactivate,'enable','off'); 
+                set(handlesToInactivate,'enable','off');
                 set(obj.AlexSelectionH,'enable','off');
             else
                 % we have finished acquiring
@@ -546,10 +692,10 @@ classdef SimpleMscopeGUI < handle
         %% updater for idle timer
         function updateIdle(obj)
             try
-            obj.updateStat; % Always update the status indicator
-            set(obj.SinglePlotAxisH,'CLim',obj.ImageLimits); % update the image scaling
-            statusNow = obj.CamCon.getStringStatus;
-            
+                obj.updateStat; % Always update the status indicator
+                set(obj.SinglePlotAxisH,'CLim',obj.ImageLimits); % update the image scaling
+                statusNow = obj.CamCon.getStringStatus;
+                
                 if strcmp(statusNow,'IDLE')
                     obj.updateTemp;
                     obj.updateTimes;
@@ -566,9 +712,9 @@ classdef SimpleMscopeGUI < handle
         %% updater for acq timer
         function updateAcq(obj)
             try
-            obj.updateStat; % always update the status
-            set(obj.SinglePlotAxisH,'CLim',obj.ImageLimits); % update the image scaling
-            
+                obj.updateStat; % always update the status
+                set(obj.SinglePlotAxisH,'CLim',obj.ImageLimits); % update the image scaling
+                
                 statusNow = obj.CamCon.getStringStatus;
                 if strcmp(statusNow,'ACQUIRE')
                     % update the frame rate and temperature indicators
@@ -606,7 +752,7 @@ classdef SimpleMscopeGUI < handle
         end
         
         %% other updaters
-              
+        
         function updateFrameRate(obj)
             % make sure the frame rate indicator says the correct frame rate
             currentRate = 1/get(obj.TimerAcq,'InstantPeriod');
@@ -690,7 +836,7 @@ classdef SimpleMscopeGUI < handle
             if obj.State ~= 0
                 set(src,'String',obj.SpoolPath);% reset the input
                 return % cancel any changes
-            end 
+            end
             setPath = get(src,'String'); % path input
             if exist(setPath,'dir') == 7 % if it is a directory
                 obj.SpoolPath = setPath;
@@ -705,7 +851,7 @@ classdef SimpleMscopeGUI < handle
             if obj.State ~= 0
                 set(src,'String',obj.SpoolName);% reset the input
                 return % cancel any changes
-            end 
+            end
             setName = get(src,'String'); % name input
             if isempty(regexp(setName, '[/\*:?"<>|]', 'once')) % if it isn't valid filename
                 obj.SpoolName = setName;
@@ -720,7 +866,7 @@ classdef SimpleMscopeGUI < handle
             if obj.State ~= 0
                 set(src,'String',obj.SpoolFrames); % reset the input
                 return % cancel any changes
-            end 
+            end
             setFrames = str2double(get(src,'String'));
             if ~isnan(setFrames)
                 setFrames = int32(floor(max(1,setFrames)));
@@ -738,9 +884,9 @@ classdef SimpleMscopeGUI < handle
             if obj.State ~= 0
                 set(src,'Value',0); % reset the input
                 return % cancel any changes
-            end            
+            end
             
-            set(src,'enable','inactive');
+            set(src,'enable','inactive','Value',1);
             set(obj.AlexSelectionH,'enable','on');
             obj.CamCon.setAcqMode(1 + obj.DFT_TRIGGER_FAST); % set alex mode on the camera (external triggering)
             obj.AlexMode = 1;
@@ -754,9 +900,9 @@ classdef SimpleMscopeGUI < handle
             if obj.State ~= 0
                 set(src,'Value',0); % reset the input
                 return % cancel any changes
-            end   
+            end
             
-            set(src,'enable','inactive');
+            set(src,'enable','inactive','Value',1);
             set(obj.AlexSelectionH,'enable','off');
             obj.CamCon.setAcqMode(0); % set cw mode on the camera (internal triggering)
             % make sure the camera is set to the same frame time as before
@@ -769,16 +915,145 @@ classdef SimpleMscopeGUI < handle
         
         function selectAlex(obj,src,~)
             % for choosing between duALEX or trALEX types
-            if ~obj.AlexMode || obj.State ~=0 
+            if ~obj.AlexMode || obj.State ~=0
                 % i.e. somehow we've entered this callback in CW mode or while not idle
                 set(src,'Value',obj.AlexSelection);
             else
                 % set our alex type to be what the user wants
                 obj.AlexSelection = get(src,'Value');
-            end
+                
+                % set which lasers are involved so we are allowed to change
+                % the free lasers state
+                switch obj.AlexSelection
+                    case 1 % GR is RG
+                        obj.GreenBusy = 1;
+                        obj.RedBusy = 1;
+                        obj.NIRBusy = 0;
+                    case 2 % GRN (is RNG)
+                        obj.GreenBusy = 1;
+                        obj.RedBusy = 1;
+                        obj.NIRBusy = 0;
+                    case 3 % GN (is NG)
+                        obj.GreenBusy = 1;
+                        obj.RedBusy = 0;
+                        obj.NIRBusy = 1;
+                    case 4 % RN (is ??)
+                        obj.GreenBusy = 0;
+                        obj.RedBusy = 1;
+                        obj.NIRBusy = 1;
+                    case 5 % NRG (is NRG)
+                        obj.GreenBusy = 1;
+                        obj.RedBusy = 1;
+                        obj.NIRBusy = 1;
+                end % switch
+            end % if-else
         end % selectAlex
         
         % callback from buttons to change camera settings
+        
+        %% SETTING LASER STATES AND POWERS
+        
+        function toggleGreen(obj,src,~)
+            % N.B. The green laser is a little different, because the NI
+            % card controls the power via the AOM - so we pass the laser
+            % power as an argument rather than simply the on/off state
+            % call back for laser on button
+            if (obj.AlexMode && obj.State ~= 0 && obj.GreenBusy) || (~obj.AlexMode && obj.State == 3)
+                % if it is in alex mode and not idle and the green laser is
+                % involved in the ALEX, or in cw mode and spooling, then do
+                % nothing and pop the button back to where it previously
+                % was
+                set(src,'Value',obj.GreenState);
+            else
+                % otherwise we have no problem setting the laser's state
+                obj.GreenState = get(src,'Value');
+                obj.LaserCon.setGreenLaser(obj.GreenState*obj.GreenPower);
+            end
+        end
+        
+        function toggleRed(obj,src,~)
+            % call back for laser on button
+            if (obj.AlexMode && obj.State ~= 0 && obj.RedBusy) || (~obj.AlexMode && obj.State == 3)
+                % if it is in alex mode and not idle and the green laser is
+                % involved in the ALEX, or in cw mode and spooling, then do
+                % nothing and pop the button back to where it previously
+                % was
+                set(src,'Value',obj.RedState);
+            else
+                % otherwise we have no problem setting the laser's state
+                obj.RedState = get(src,'Value');
+                obj.LaserCon.setRedLaser(obj.RedState*obj.RedPower);
+            end
+        end
+        
+        function toggleNIR(obj,src,~)
+            % call back for laser on button
+            if (obj.AlexMode && obj.State ~= 0 && obj.NIRBusy) || (~obj.AlexMode && obj.State == 3)
+                % if it is in alex mode and not idle and the green laser is
+                % involved in the ALEX, or in cw mode and spooling, then do
+                % nothing and pop the button back to where it previously
+                % was
+                set(src,'Value',obj.NIRState);
+            else
+                % otherwise we have no problem setting the laser's state
+                obj.NIRState = get(src,'Value');
+                obj.LaserCon.setNIRLaser(obj.NIRState);
+            end
+        end
+        
+        % powers
+        
+        function setGreenPower(obj,src,~)
+            if (obj.AlexMode && obj.State ~= 0 && obj.GreenBusy) || (~obj.AlexMode && obj.State == 3)
+                % if we aren't allowed to set the power then don't
+                set(src,'String',sprintf('%.1f %%',obj.GreenPower*100));
+            else
+                inputPowerString = get(src,'String');
+                if strncmp(fliplr(inputPowerString),'%',1)
+                    inputPowerString = inputPowerString(1:end-1);
+                end
+                inputPower = str2double(inputPowerString)/100;
+                if isnan(inputPower)
+                    % reset to the last value which was valid
+                    set(src,'String',sprintf('%.1f %%',obj.GreenPower*100));
+                else
+                    % make sure the power is valid (range 0-1) here
+                    inputPower = max(inputPower,0);
+                    inputPower = min(inputPower,1);
+                    set(src,'String',sprintf('%.1f %%',inputPower*100));
+                    obj.GreenPower = inputPower;
+                    
+                    % and set the laser power to what we want
+                    obj.LaserCon.setGreenLaser(obj.GreenState*obj.GreenPower);
+                end 
+            end
+        end % setGreenPower
+        
+        function setRedPower(obj,src,~)
+            if (obj.AlexMode && obj.State ~= 0 && obj.RedBusy) || (~obj.AlexMode && obj.State == 3)
+                % if we aren't allowed to set the power then don't
+                set(src,'String',sprintf('%.1f %%',obj.RedPower*100));
+            else
+                inputPowerString = get(src,'String');
+                if strncmp(fliplr(inputPowerString),'%',1)
+                    inputPowerString = inputPowerString(1:end-1);
+                end
+                inputPower = str2double(inputPowerString)/100;
+                if isnan(inputPower)
+                    % reset to the last value which was valid
+                    set(src,'String',sprintf('%.1f %%',obj.RedPower*100));
+                else
+                    % make sure the power is valid (range 0-1) here
+                    inputPower = max(inputPower,0);
+                    inputPower = min(inputPower,1);
+                    set(src,'String',sprintf('%.1f %%',inputPower*100));
+                    obj.RedPower = inputPower;
+                    
+                    % and set the laser power to what we want
+                    obj.LaserCon.setRedLaser(obj.RedState*obj.RedPower);
+                end 
+            end
+        end
         
         %% CLEANUP
         % clean up function for closing the figure (that gracefully closes
@@ -790,6 +1065,7 @@ classdef SimpleMscopeGUI < handle
             stop(obj.TimerAcq);
             
             obj.CamCon.disconnect; % gracefully disconnect from the camera
+            obj.LaserCon.close; % exit the card controller
             delete(src); % and delete the figure
         end
         
@@ -797,7 +1073,7 @@ classdef SimpleMscopeGUI < handle
         
         function setMinImage(obj,src,~)
             newMin = get(src,'Value');
-
+            
             newRange = get(src,'Value');
             newMax = obj.ImageLimits(1) + newRange*(obj.MAX_DATA-obj.ImageLimits(1));
             
@@ -872,7 +1148,7 @@ classdef SimpleMscopeGUI < handle
             obj.State = 1; % set the state to video
             
             % make sure the video button can only be pressed
-            % once          
+            % once
             set(obj.StopCaptH,'enable','on','Value',0);
             if get(obj.StartCaptH,'Value') == 1, return; end % don't do anything if startcapt has been hit too
             set(obj.StartCaptH,'enable','inactive');
@@ -892,7 +1168,7 @@ classdef SimpleMscopeGUI < handle
             % start the video
             if strcmp(obj.CamCon.getStringStatus,'IDLE')
                 try
-                obj.CamCon.startAcquiring;
+                    obj.CamCon.startAcquiring;
                 catch
                     set(obj.MessageH,'String','CAMERA ERROR','BackgroundColor',obj.COLOR_STAT_ERR);
                 end
@@ -916,7 +1192,7 @@ classdef SimpleMscopeGUI < handle
             end
             
             obj.State = 2; % set us spooling
-                      
+            
             % stop the update timer
             try
                 stop(obj.AcqTimer);
@@ -956,7 +1232,12 @@ classdef SimpleMscopeGUI < handle
             
             % start the video
             if strcmp(obj.CamCon.getStringStatus,'IDLE')
-                obj.CamCon.startAcquiring
+                try
+                    obj.CamCon.startAcquiring
+                catch
+                    set(obj.MessageH,'String','CAMERA ERROR - STOP AND RETRY',...
+                    'BackgroundColor',obj.COLOR_STAT_ERR);
+                end
             else
                 set(obj.MessageH,'String','CAMERA BUSY',...
                     'BackgroundColor',obj.COLOR_STAT_ERR);
@@ -974,7 +1255,7 @@ classdef SimpleMscopeGUI < handle
         
         % Stop acquisition of any sort
         function stopCapt(obj,~,~)
-            obj.State = 0; % idle            
+            obj.State = 0; % idle
             
             % make sure this button can't be pushed again
             set(obj.StopCaptH,'enable','off');

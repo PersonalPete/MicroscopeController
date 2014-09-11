@@ -5,20 +5,110 @@ classdef CardController < handle
     %   to run in the background and synchronise the lasers and camera for
     %   ALEX data acquisition
     
-    properties (Access = private)
+    properties (SetAccess = private)
         % where to find the LabVIEW VIs that will be run when requested
-        ViLocation = 'C:\Users\LocalAdmin\Documents\MATLAB\MicroscopeController';
+        ViLocation = 'C:\Users\LocalAdmin\Documents\MATLAB\MicroscopeController\CardControlVIs';
         % used to make sure we only have one VI running at a time
         IsRunning = false;
         LabviewActXServer;
         CurrentVi;
+        
+        % for the static laser output control
+        GreenVi;
+        RedVi;
+        NIRVi;
+        
+        % is a particular laser in use (have we set an output value)
+        GreenBusy = 0;
+        RedBusy = 0;
+        NIRBusy = 0;
+        
+        CoherentCon; % to send serial port information to the coherent red laser
+        
     end
     
     methods (Access = public)
-        function obj = CardController()
+        function obj = CardController(redPort)
+            % construct the coherent connection
+            obj.CoherentCon = CoherentCube(redPort);
+            
             % construct the active x server
             obj.LabviewActXServer = actxserver('LabVIEW.Application');
         end % no-arg constructor
+        
+        function setGreenLaser(obj,power)
+            if power > 1 || power < 0
+                MException('MScope:InvalidArgument',...
+                    'Green power must be between 0 and 1');
+            end
+            
+            if ~obj.IsRunning % if we aren't currently running an ALEX vi
+                if obj.GreenBusy % if we have already set the green power
+                    % stop the old green vi
+                    obj.GreenVi.Abort;
+                    % delete(obj.GreenVi);
+                    obj.GreenBusy = false;
+                end
+                obj.GreenVi = invoke(obj.LabviewActXServer,'GetVIReference',...
+                    fullfile(obj.ViLocation,'Green_Ana.vi'));                
+                obj.GreenVi.SetControlValue('Green Laser Power',power);
+                obj.GreenVi.Run(1);
+                obj.GreenBusy = 1;
+            end
+        end % setGreenLaser
+        
+        function setRedLaser(obj,power)
+            if power < 0 || power > 1
+                MException('MScope:InvalidArgument',...
+                    'Red state must be between bewteen 0 and 1');
+            end
+            
+            % We should use the serial/USB connection to the laser to set
+            % the red power here
+            
+            obj.CoherentCon.setPower(power);
+            
+            if ~obj.IsRunning % if we aren't currently running an ALEX vi
+                if obj.RedBusy % if we have already set the red power
+                    % stop the old green vi
+                    obj.RedVi.Abort;
+                    obj.RedBusy = false;
+                end
+                obj.RedVi = invoke(obj.LabviewActXServer,'GetVIReference',...
+                    fullfile(obj.ViLocation,'Red_Dig.vi'));
+                if power
+                    obj.RedVi.SetControlValue('RedLaserOn',true);
+                else
+                    obj.RedVi.SetControlValue('RedLaserOn',false);
+                end
+                obj.RedVi.Run(1);
+                obj.RedBusy = 1;
+            end
+        end % setGreenLaser
+        
+        function setNIRLaser(obj,state)
+            if state < 0
+                MException('MScope:InvalidArgument',...
+                    'NIR state must be between boolean');
+            end
+            
+            if ~obj.IsRunning % if we aren't currently running an ALEX vi
+                if obj.NIRBusy % if we have already set the NIR power
+                    % stop the old green vi
+                    obj.NIRVi.Abort;
+                    obj.NIRBusy = false;
+                end
+                obj.NIRVi = invoke(obj.LabviewActXServer,'GetVIReference',...
+                    fullfile(obj.ViLocation,'NIR_Dig.vi'));
+                if state
+                    obj.NIRVi.SetControlValue('NIRLaserOn',true);
+                else
+                    obj.NIRVi.SetControlValue('NIRLaserOn',false);
+                end
+                obj.NIRVi.Run(1);
+                obj.NIRBusy = 1;
+            end
+        end % setNIRLaser
         
         function startThreeColourALEX(obj,freq,greenAmp)
             % uses the VI 'trALEX.vi' to start three colour ALEX
@@ -63,15 +153,27 @@ classdef CardController < handle
                 MException('MScope:NotRunning',...
                     'Can''t stop acquisition, not running').throw;
             end
-            obj.CurrentVi.release; % stop the VI - green laser could stay on here
+            obj.CurrentVi.Abort; % stop the VI - green laser could stay on here
             obj.IsRunning = false;
         end
-          
+        
         function close(obj) % deletes the server
-            if obj.IsRunning
-                MException('MScope:IsRunning',...
-                    'Can''t close, acquisition running');
+            try
+                if obj.IsRunning
+                    obj.CurrentVi.release;
+                end
+                
+                % make sure all the lasers are off
+                obj.setGreenLaser(0);
+                obj.setNIRLaser(0);
+                obj.setRedLaser(0);
+                
+                obj.GreenVi.release;
+                obj.NIRVi.release;
+                obj.RedVi.release
+            catch
             end
+            obj.CoherentCon.close;
             obj.LabviewActXServer.delete;
         end
     end
