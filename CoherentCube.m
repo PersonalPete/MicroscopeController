@@ -50,7 +50,7 @@ classdef CoherentCube < handle
             obj.sendAndRec('L=1');
             powerFraction = min(powerFraction,1);
             powerFraction = max(powerFraction,0);
-            obj.sendAndRec(sprintf('L=%.1f',powerFraction*obj.MaxPower));
+            obj.sendAndRec(sprintf('P=%.1f',powerFraction*obj.MaxPower));
         end
         
         function close(obj)

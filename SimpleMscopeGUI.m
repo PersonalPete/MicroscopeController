@@ -115,43 +115,43 @@ classdef SimpleMscopeGUI < handle
         
         COLOR_BGD  = [0.2 0.2 0.2];
         
-        COLOR_INPUT_BGD = [0.6 1.0 0.6];
-        COLOR_INPUT_TEXT = [0.0 0.0 0.0];
+        COLOR_INPUT_BGD = [0.62 0.71 0.80]; % [0.6 1.0 0.6];
+        COLOR_INPUT_TEXT = [0.2 0.2 0.2]; % [0 0 0];
         
-        COLOR_AUTO_BGD = [0.8 0.0 0.0];
+        COLOR_AUTO_BGD = [0.24 0.35 0.67];%[0.8 0.0 0.0];
         COLOR_AUTO_TEXT = [1.0 1.0 1.0];
         
         COLOR_INFO_BGD = [0.2 0.2 0.2];
         COLOR_INFO_TEXT = [1.0 1.0 1.0];
         
-        COLOR_ALEX_BGD = [0.9 0.6 0.6];
-        COLOR_ALEX_TEXT = [0.0 0.0 0.0];
+        COLOR_ALEX_BGD = [0.24 0.35 0.67];%[0.9 0.6 0.6];
+        COLOR_ALEX_TEXT = [1.0 1 1]; % [0.0 0.0 0.0];
         
-        COLOR_CW_BGD = [1.0 0.6 0.2];
-        COLOR_CW_TEXT = [0.0 0.0 0.0];
+        COLOR_CW_BGD = [0.24 0.35 0.67];%[1.0 0.6 0.2];
+        COLOR_CW_TEXT = [1.0 1 1]; % [0.0 0.0 0.0];
         
-        COLOR_532_BGD = [0.0 0.8 0.0];
-        COLOR_532_TEXT = [0.0 0.0 0.0];
+        COLOR_532_BGD = [0.24 0.35 0.67];%[0.0 0.8 0.0];
+        COLOR_532_TEXT = [1.0 1 1]; % [0.0 0.0 0.0];
         
-        COLOR_640_BGD = [0.8 0.0 0.0];
-        COLOR_640_TEXT = [0.0 0.0 0.0];
+        COLOR_640_BGD = [0.24 0.35 0.67];%[0.8 0.0 0.0];
+        COLOR_640_TEXT = [1.0 1 1]; % [0.0 0.0 0.0];
         
-        COLOR_730_BGD = [0.8 0.8 0.0];
-        COLOR_730_TEXT = [0.0 0.0 0.0];
+        COLOR_730_BGD = [0.24 0.35 0.67];%[0.8 0.8 0.0];
+        COLOR_730_TEXT = [1.0 1 1]; % [0.0 0.0 0.0];
         
-        COLOR_STAT_OK = [0.4 0.4 0.8];
-        COLOR_STAT_WARN = [1.0 0.5 0.0];
+        COLOR_STAT_OK = [0.39 0.58 0.93];%[0.4 0.4 0.8];
+        COLOR_STAT_WARN = [0.24 0.35 0.67];%[1.0 0.5 0.0];
         COLOR_STAT_ERR = [0.8 0.0 0.0];
         COLOR_STAT_TEXT = [1.0 1.0 1.0];
         
-        COLOR_VIDEO_BGD = [0.2 0.2 1.0];
-        COLOR_VIDEO_TEXT = [1.0 1.0 1.0];
+        COLOR_VIDEO_BGD = [0.62 0.71 0.80]%;[0.2 0.2 1.0];
+        COLOR_VIDEO_TEXT = [0.2 0.2 0.2];%[1 1 1];
         
-        COLOR_CAPT_BGD = [0.2 1.0 0.2];
-        COLOR_CAPT_TEXT = [0.0 0.0 0.0];
+        COLOR_CAPT_BGD = [0.24 0.35 0.67];%[0.2 1.0 0.2];
+        COLOR_CAPT_TEXT =  [1.0 1.0 1.0];%[0.0 0.0 0.0];
         
-        COLOR_STOP_BGD = [0.8 0.0 0.0];
-        COLOR_STOP_TEXT = [0.0 0.0 0.0];
+        COLOR_STOP_BGD = [0.24 0.35 0.67];%[0.8 0.0 0.0];
+        COLOR_STOP_TEXT =  [1.0 1.0 1.0];%[0.0 0.0 0.0];
         
         COLOR_RED   = [0.8 0.0 0.0];
         COLOR_GREEN = [0.0 0.8 0.0];
@@ -192,10 +192,10 @@ classdef SimpleMscopeGUI < handle
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_STAT_ERR,...
                     'Units','Normalized',...
-                    'Position',[0.0, 0.0, 0.1, 0.025],...
+                    'Position',[0.0, 0.0, 0.1, 0.05],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
-                    'FontSize',0.95,...
+                    'FontSize',0.475,...
                     'FontWeight','normal',...
                     'ForegroundColor',obj.COLOR_STAT_TEXT,...
                     'String','',... % default blank string, but gets updated on next line
@@ -208,10 +208,10 @@ classdef SimpleMscopeGUI < handle
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_STAT_ERR,...
                     'Units','Normalized',...
-                    'Position',[0.1, 0.0, 0.1, 0.025],...
+                    'Position',[0.1, 0.0, 0.1, 0.05],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
-                    'FontSize',0.95,...
+                    'FontSize',0.475,...
                     'FontWeight','normal',...
                     'ForegroundColor',obj.COLOR_STAT_TEXT,...
                     'String','',... % default blank string, but gets updated on next line
@@ -551,7 +551,7 @@ classdef SimpleMscopeGUI < handle
                     'Position',[0.70 0.025 0.1 0.025],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
-                    'FontSize',0.9,...
+                    'FontSize',0.8,...
                     'FontWeight','normal',...
                     'ForegroundColor',obj.COLOR_AUTO_TEXT,...
                     'String','AUTO',...
@@ -729,7 +729,8 @@ classdef SimpleMscopeGUI < handle
                         % scale the image
                         set(obj.FrAcqH,'String',sprintf('%i',latestNo),'BackgroundColor',obj.COLOR_STAT_WARN);
                     end
-                    
+                  
+                % what happens if the ACQ timer realises the acquistion has stopped    
                 elseif strcmp(statusNow,'IDLE') && obj.AllowedToStop
                     % make sure the start acquisition buttons are both
                     % available
@@ -739,6 +740,17 @@ classdef SimpleMscopeGUI < handle
                     set(obj.StartCaptH,'enable','on','value',0);
                     set(obj.StopCaptH,'enable','off','value',1);
                     
+                    % if in ALEX then stop the lasers after the camera
+                    % stops too
+                    if obj.AlexMode
+                        obj.LaserCon.stopSignal
+                        obj.GreenState = 0;
+                        obj.RedState = 0;
+                        obj.NIRState = 0;
+                        % set the buttons to reflect this
+                        set([obj.GreenOnH, obj.RedOnH, obj.NIROnH],'Value',0,'Enable','on');                
+                    end
+                
                     % set the state, which makes sure the above can run
                     obj.State = 0; % i.e. idle
                     
@@ -932,7 +944,7 @@ classdef SimpleMscopeGUI < handle
                     case 2 % GRN (is RNG)
                         obj.GreenBusy = 1;
                         obj.RedBusy = 1;
-                        obj.NIRBusy = 0;
+                        obj.NIRBusy = 1;
                     case 3 % GN (is NG)
                         obj.GreenBusy = 1;
                         obj.RedBusy = 0;
@@ -1165,7 +1177,7 @@ classdef SimpleMscopeGUI < handle
                 set(obj.MessageH,'String','SPOOL CANCEL FAIL','BackgroundColor',obj.COLOR_STAT_ERR);
             end
             
-            % start the video
+            %% start the video
             if strcmp(obj.CamCon.getStringStatus,'IDLE')
                 try
                     obj.CamCon.startAcquiring;
@@ -1176,7 +1188,12 @@ classdef SimpleMscopeGUI < handle
                 set(obj.MessageH,'String','CAMERA BUSY','BackgroundColor',obj.COLOR_STAT_ERR);
             end
             
-            % finally enable the stop and spool buttons
+            %% if we are in ALEX mode then start the appropriate card action
+            if obj.AlexMode
+                obj.LaserCon.startAlex(obj.AlexSelection,obj.FrameTime,obj.GreenPower);
+            end
+            
+            %% finally enable the stop and spool buttons
             
             set(obj.StartCaptH,'enable','on','Value',0);
         end
@@ -1230,7 +1247,7 @@ classdef SimpleMscopeGUI < handle
                 set(obj.MessageH,'String','SPOOL ERROR','BackgroundColor',obj.COLOR_STAT_ERR)
             end
             
-            % start the video
+            %% start the video
             if strcmp(obj.CamCon.getStringStatus,'IDLE')
                 try
                     obj.CamCon.startAcquiring
@@ -1243,7 +1260,12 @@ classdef SimpleMscopeGUI < handle
                     'BackgroundColor',obj.COLOR_STAT_ERR);
             end
             
-            % start the update timer
+            %% if we are in ALEX mode, then start the card in the proper mode
+            if obj.AlexMode
+                obj.LaserCon.startAlex(obj.AlexSelection,obj.FrameTime,obj.GreenPower);
+            end
+            
+            %% start the update timer
             try
                 start(obj.AcqTimer);
             catch
@@ -1264,7 +1286,7 @@ classdef SimpleMscopeGUI < handle
             
             % aborting capture or video
             obj.CamCon.stopIfAcquiring;
-            
+            % Only stop the lasers if we are in ALEX mode
             % finally enable the start buttons
             set(obj.StartVideoH,'enable','on','Value',0);
             set(obj.StartCaptH,'enable','on','Value',0);

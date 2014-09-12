@@ -25,6 +25,7 @@ classdef CardController < handle
         
         CoherentCon; % to send serial port information to the coherent red laser
         
+        CurrentAlexSelection = 0;
     end
     
     methods (Access = public)
@@ -42,7 +43,9 @@ classdef CardController < handle
                     'Green power must be between 0 and 1');
             end
             
-            if ~obj.IsRunning % if we aren't currently running an ALEX vi
+            if (~obj.IsRunning || obj.CurrentAlexSelection == 4)
+                % if we aren't currently running an ALEX vi or we are, but
+                % it doesn't use this laser
                 if obj.GreenBusy % if we have already set the green power
                     % stop the old green vi
                     obj.GreenVi.Abort;
@@ -50,7 +53,7 @@ classdef CardController < handle
                     obj.GreenBusy = false;
                 end
                 obj.GreenVi = invoke(obj.LabviewActXServer,'GetVIReference',...
-                    fullfile(obj.ViLocation,'Green_Ana.vi'));                
+                    fullfile(obj.ViLocation,'Green_Ana.vi'));
                 obj.GreenVi.SetControlValue('Green Laser Power',power);
                 obj.GreenVi.Run(1);
                 obj.GreenBusy = 1;
@@ -68,7 +71,7 @@ classdef CardController < handle
             
             obj.CoherentCon.setPower(power);
             
-            if ~obj.IsRunning % if we aren't currently running an ALEX vi
+            if (~obj.IsRunning || obj.CurrentAlexSelection == 3) % if we aren't currently running an ALEX vi
                 if obj.RedBusy % if we have already set the red power
                     % stop the old green vi
                     obj.RedVi.Abort;
@@ -76,7 +79,7 @@ classdef CardController < handle
                 end
                 obj.RedVi = invoke(obj.LabviewActXServer,'GetVIReference',...
                     fullfile(obj.ViLocation,'Red_Dig.vi'));
-                if power
+                if power > 0
                     obj.RedVi.SetControlValue('RedLaserOn',true);
                 else
                     obj.RedVi.SetControlValue('RedLaserOn',false);
@@ -92,7 +95,7 @@ classdef CardController < handle
                     'NIR state must be between boolean');
             end
             
-            if ~obj.IsRunning % if we aren't currently running an ALEX vi
+            if (~obj.IsRunning || obj.CurrentAlexSelection == 1) % if we aren't currently running an ALEX vi
                 if obj.NIRBusy % if we have already set the NIR power
                     % stop the old green vi
                     obj.NIRVi.Abort;
@@ -110,19 +113,11 @@ classdef CardController < handle
             end
         end % setNIRLaser
         
-        function startThreeColourALEX(obj,freq,greenAmp)
+        function startAlex(obj,alexSelection,frameTime,greenAmp)
             % uses the VI 'trALEX.vi' to start three colour ALEX
-            % acquisition. The frequency must be less than 1 kHz and the
-            % green amplitude must be between 0 and 1
-            if nargin < 3
-                freq = 10; % (/Hz) default
-                greenAmp = 0.1; % (/V) i.e. 10% power
-            end
+            % acquisition. The frame time is in MILLISECONDS
             
-            if freq > 1000 % check the frequency is possible
-                MException('MScope:InvalidArgument',...
-                    'Frequency must tbe less than 1 kHz').throw;
-            end
+            frameTime = frameTime/1000; % MILLISECONDS -> SECONDS
             
             if greenAmp > 1 || greenAmp < 0; % check the AOM isn't overwhelmed
                 MException('MScope:InvalidArgument',...
@@ -130,31 +125,106 @@ classdef CardController < handle
             end
             
             if obj.IsRunning % make sure we don't try to run two at once
-                MException('MScope:AlreadyRunning',...
-                    'Can''t start acquisition, already running....').throw;
+                obj.CurrentVi.Abort;
+                obj.IsRunning = false;
             end
             
+            % We need to check if any lasers that we are about to control
+            % with the card are already busy - if they are, then we should
+            % cancel the vi they are running
+            
+            obj.CurrentAlexSelection = alexSelection;
+            
+            switch alexSelection
+                case 1 % GR
+                    if obj.GreenBusy
+                        obj.GreenVi.Abort;
+                        obj.GreenBusy = false;
+                    end
+                    if obj.RedBusy
+                        obj.RedVi.Abort;
+                        obj.RedBusy = false;
+                    end
+                    alexViToRun = 'DuALEX_RG.vi';
+                    freq = 1/(frameTime*2); % since it is two color and freq is the overall cycle time
+                case 2 % GRN
+                    if obj.GreenBusy
+                        obj.GreenVi.Abort;
+                        obj.GreenBusy = false;
+                    end
+                    if obj.RedBusy
+                        obj.RedVi.Abort;
+                        obj.RedBusy = false;
+                    end
+                    if obj.NIRBusy
+                        obj.NIRVi.Abort;
+                        obj.NIRBusy = false;
+                    end
+                    alexViToRun = 'TrALEX_RNG.vi';
+                    freq = 1/(frameTime*3); % since it is three color
+                case 3 % GN
+                    if obj.GreenBusy
+                        obj.GreenVi.Abort;
+                        obj.GreenBusy = false;
+                    end
+                    if obj.NIRBusy
+                        obj.NIRVi.Abort;
+                        obj.NIRBusy = false;
+                    end
+                    alexViToRun = 'DuALEX_NG.vi';
+                    freq = 1/(frameTime*2); % since it is two color
+                case 4 % RN
+                    if obj.NIRBusy
+                        obj.NIRVi.Abort;
+                        obj.NIRBusy = false;
+                    end
+                    if obj.RedBusy
+                        obj.RedVi.Abort;
+                        obj.RedBusy = false;
+                    end
+                    alexViToRun = 'DuALEX_RN.vi';
+                    freq = 1/(frameTime*2); % since it is two color
+                case 5 % NRG
+                    if obj.GreenBusy
+                        obj.GreenVi.Abort;
+                        obj.GreenBusy = false;
+                    end
+                    if obj.RedBusy
+                        obj.RedVi.Abort;
+                        obj.RedBusy = false;
+                    end
+                    if obj.NIRBusy
+                        obj.NIRVi.Abort;
+                        obj.NIRBusy = false;
+                    end
+                    alexViToRun = 'TrALEX_NRG.vi';
+                    freq = 1/(frameTime*3); % since it is three color
+            end
             % which VI we are going to open
             obj.CurrentVi = invoke(obj.LabviewActXServer,'GetVIReference',...
-                fullfile(obj.ViLocation,'trALEX.vi'));
+                fullfile(obj.ViLocation,alexViToRun));
             
             % set the parameters for it
             obj.CurrentVi.SetControlValue('Repetition Frequency',freq);
             obj.CurrentVi.SetControlValue('Analog Amplitude',greenAmp);
             
-            
             obj.CurrentVi.Run(1); % the argument '1' runs in background
             obj.IsRunning = true;
-        end % startThreeColourALEX
+        end % startALEX
         
         function stopSignal(obj)
-            % aborts the current running VI
-            if ~obj.IsRunning
-                MException('MScope:NotRunning',...
-                    'Can''t stop acquisition, not running').throw;
+            % aborts the current running VI(s)
+                   
+            if obj.IsRunning % if we are doing alex
+                obj.CurrentVi.Abort; % stop the VI - green laser could stay on here
+                obj.IsRunning = false;
             end
-            obj.CurrentVi.Abort; % stop the VI - green laser could stay on here
-            obj.IsRunning = false;
+            
+            % turn all the others off too
+            obj.setGreenLaser(0);
+            obj.setNIRLaser(0);
+            obj.setRedLaser(0);
+                
         end
         
         function close(obj) % deletes the server
