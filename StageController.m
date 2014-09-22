@@ -6,7 +6,6 @@ classdef StageController < handle
     
     properties (SetAccess = private)
         NumControllers; % should be 4
-        Connected; % 1 = true, 0 = false
         DaisyChainID;
         ControllerID; % array of controller ids
         
@@ -48,13 +47,14 @@ classdef StageController < handle
             end
         end
         
-        function disconnect(obj)
+        function delete(obj)
             % disconnect correctly
             closeDaisyChain(obj.DaisyChainID);
         end
         
         function position = getPosition(obj,controller)
             % UNITS ARE MILLIMETERS
+            position = 0;
             position = getPos(obj.ControllerID(controller));
         end
         

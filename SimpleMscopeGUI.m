@@ -5,12 +5,17 @@ classdef SimpleMscopeGUI < handle
     properties (SetAccess = private)
         
         %
-        RedPort = 'TEST';
+        RedPort = 'TEST'; % 'COM5';
+        PosButtonStep = -2; % 10^-PosButtonStep (in mm) (Default - can be changed by user with slider)
+        SwapLR = 1; % choose -1 or 1 to change left right behaviour
+        SwapUD = 1; % choose -1 or 1 to change up down
+        SwapZ = -1; % ditto
         
         % some defaults
         DFT_TRIGGER_FAST = 0; % set this to 1 for fast triggering
         TIMER_IDLE_PERIOD = 0.2; % (\s between updating displayed info)
         TIMER_ACQ_PERIOD = 0.033; % update at 30 Hz in this mode (maximum)
+        TIMER_POS_PERIOD = 0.2; % for querying the position (maybe this is too fast)
         
         % camera controller object
         CamCon;
@@ -22,11 +27,16 @@ classdef SimpleMscopeGUI < handle
         % controller for PI stages
         StageCon;
         NumStages = 4; % so that we check we have the right number connected
+        % which controller corresponds to which 'real' movement
+        LeftRightStage = 4;
+        UpDownStage = 3;
+        FocusStage = 2;
+        TirfStage = 1;
         
         % timer object for real-time updating
         TimerIdle; % runs when system is idle
         TimerAcq; % runs when camera is acquiring/videoing
-        
+        TimerPosition; % for position feedback
         
         % handles to displayed objects - i.e. without callbacks
         MainFigH;
@@ -36,6 +46,11 @@ classdef SimpleMscopeGUI < handle
         FrAcqH; % how many frames acquired
         FrameRateH;
         MessageH;
+        
+        % position displays
+        LeftRightDisplayH;
+        UpDownDisplayH;
+        FocusDisplayH;
         
         MinFrameH; % display for the minimum frame time
         ExpPctH; % display for the percent of the frame time that is exposing - CW only
@@ -63,9 +78,15 @@ classdef SimpleMscopeGUI < handle
         SetFrameH;  % for the number of frames
         
         % stage positions
-        LeftRightDisplayH;
-        UpDownDisplayH;
-        FocusDisplayH;
+        UpPosH;
+        DownPosH;
+        LeftPosH;
+        RightPosH;
+        FocusUpH;
+        FocusDownH;        
+        
+        StepDisplayH; % display for the step size
+        PositionSensH; % slider to choose step size
         
         StartVideoH;
         StartCaptH;
@@ -80,6 +101,11 @@ classdef SimpleMscopeGUI < handle
         SpoolPath = pwd;
         SpoolName = 'DefaultFileName';
         SpoolFrames = 100;
+        
+        % position
+        UpDownSetPos;
+        LeftRightSetPos;
+        FocusSetPos;
         
         AlexMode = 0; % this is set to be the default on construction
         AlexSelection = 1; % this is which alex type (R-G or R-G-N etc...) is selected
@@ -148,6 +174,9 @@ classdef SimpleMscopeGUI < handle
         COLOR_730_BGD = [0.24 0.35 0.67];%[0.8 0.8 0.0];
         COLOR_730_TEXT = [1.0 1 1]; % [0.0 0.0 0.0];
         
+        COLOR_POS_BGD = [0.24 0.35 0.67];
+        COLOR_POS_TEXT = [1 1 1];
+        
         COLOR_STAT_OK = [0.39 0.58 0.93];%[0.4 0.4 0.8];
         COLOR_STAT_WARN = [0.24 0.35 0.67];%[1.0 0.5 0.0];
         COLOR_STAT_ERR = [0.8 0.0 0.0];
@@ -186,7 +215,7 @@ classdef SimpleMscopeGUI < handle
             try % in a try-catch so we always disconnect from camera
                 % build the main figure - visibility off for now
                 %% MAIN FIGURE
-                obj.MainFigH = figure('CloseRequestFcn',@obj.cleanUp,...
+                obj.MainFigH = figure('CloseRequestFcn',@obj.delete,...
                     'Color',obj.COLOR_BGD,...
                     'ColorMap',gray(obj.MAX_DATA),...
                     'DockControls','off',...
@@ -481,11 +510,11 @@ classdef SimpleMscopeGUI < handle
                 %% STAGE CONTROLS
                 
                 % indicators
-                obj.LeftRightDisplayH('Parent',obj.MainFigH,...
+                obj.LeftRightDisplayH = uicontrol('Parent',obj.MainFigH,...
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.80, 0.60, 0.0666, 0.05],...
+                    'Position',[0.80, 0.60, 0.0666, 0.04],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -494,11 +523,11 @@ classdef SimpleMscopeGUI < handle
                     'String','',...
                     'Visible','on');
                 
-                obj.LeftRightDisplayH('Parent',obj.MainFigH,...
+                obj.UpDownDisplayH = uicontrol('Parent',obj.MainFigH,...
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.80, 0.60, 0.0666, 0.05],...
+                    'Position',[0.8666, 0.60, 0.0666, 0.04],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -506,12 +535,12 @@ classdef SimpleMscopeGUI < handle
                     'ForegroundColor',obj.COLOR_INFO_TEXT,...
                     'String','',...
                     'Visible','on');
-
-                obj.LeftRightDisplayH('Parent',obj.MainFigH,...
+                
+                obj.FocusDisplayH = uicontrol('Parent',obj.MainFigH,...
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.80, 0.60, 0.0666, 0.05],...
+                    'Position',[0.9333, 0.60, 0.0666, 0.04],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -519,7 +548,122 @@ classdef SimpleMscopeGUI < handle
                     'ForegroundColor',obj.COLOR_INFO_TEXT,...
                     'String','',...
                     'Visible','on');
-                                
+                
+                % motion buttons
+                
+                obj.LeftPosH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.leftMove,...
+                    'Style','pushbutton',...
+                    'BackgroundColor',obj.COLOR_POS_BGD,...
+                    'Units','normalized',....
+                    'Position',[0.80 0.65, 0.0666, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_POS_TEXT,...
+                    'String','LEFT',...
+                    'Visible','on');
+                
+                obj.RightPosH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.rightMove,...
+                    'Style','pushbutton',...
+                    'BackgroundColor',obj.COLOR_POS_BGD,...
+                    'Units','normalized',....
+                    'Position',[0.80 0.70, 0.0666, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_POS_TEXT,...
+                    'String','RIGHT',...
+                    'Visible','on');
+                
+                obj.UpPosH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.upMove,...
+                    'Style','pushbutton',...
+                    'BackgroundColor',obj.COLOR_POS_BGD,...
+                    'Units','normalized',....
+                    'Position',[0.8666 0.70, 0.0666, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_POS_TEXT,...
+                    'String','UP',...
+                    'Visible','on');
+                
+                obj.DownPosH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.downMove,...
+                    'Style','pushbutton',...
+                    'BackgroundColor',obj.COLOR_POS_BGD,...
+                    'Units','normalized',....
+                    'Position',[0.8666 0.65, 0.0666, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_POS_TEXT,...
+                    'String','DOWN',...
+                    'Visible','on');
+                
+                obj.FocusUpH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.focusUpMove,...
+                    'Style','pushbutton',...
+                    'BackgroundColor',obj.COLOR_POS_BGD,...
+                    'Units','normalized',....
+                    'Position',[0.9333 0.70, 0.0666, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_POS_TEXT,...
+                    'String','Z UP',...
+                    'Visible','on');
+                
+                obj.FocusDownH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.focusDownMove,...
+                    'Style','pushbutton',...
+                    'BackgroundColor',obj.COLOR_POS_BGD,...
+                    'Units','normalized',....
+                    'Position',[0.9333 0.65, 0.0666, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_POS_TEXT,...
+                    'String','Z DOWN',...
+                    'Visible','on');
+                
+                % changing the sensitivity of position buttons
+                obj.PositionSensH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','slider',...
+                    'BackgroundColor',obj.COLOR_INPUT_BGD,...
+                    'Max',0,...
+                    'Min',-6,...
+                    'Value',obj.PosButtonStep,...
+                    'SliderStep',[1/6 1/6],...
+                    'Units','normalized',...
+                    'Position',[0.80, 0.55, 0.12333, 0.05],...
+                    'Visible','on',...
+                    'Callback',@obj.setStepDisplay);
+                
+                obj.StepDisplayH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','text',...
+                    'BackgroundColor',obj.COLOR_INFO_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.9333, 0.55, 0.0666, 0.04],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INFO,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_INFO_TEXT,...
+                    'String','',...
+                    'Visible','on');
+                
+                obj.setStepDisplay;
+                
+                
                 %% FRAME TIMINGS
                 
                 timingsFontSize = 0.35;
@@ -599,7 +743,6 @@ classdef SimpleMscopeGUI < handle
                 
                 obj.AutoH = uicontrol('Parent',obj.MainFigH,...
                     'Style','pushbutton',...
-                    'SliderStep',[1e-4 1],... % minor and major steps
                     'BackgroundColor',obj.COLOR_AUTO_BGD,...
                     'Units','Normalized',...
                     'Position',[0.70 0.025 0.1 0.025],...
@@ -655,7 +798,7 @@ classdef SimpleMscopeGUI < handle
                     'Max',1,...
                     'Min',0,...
                     'Value',1,...
-                    'enable','off',...
+                    'enable','inactive',...
                     'BackgroundColor',obj.COLOR_STOP_BGD,...
                     'Units','Normalized',...
                     'Position',[0.80, 0.00, 0.20, 0.05],...
@@ -700,21 +843,54 @@ classdef SimpleMscopeGUI < handle
                     'TimerFcn',@(~,~)obj.updateAcq,...
                     'StopFcn',@(~,~)set([obj.FrameRateH; obj.MessageH; obj.FrAcqH],'String','-','BackgroundColor',obj.COLOR_STAT_OK));
                 
-                start(obj.TimerIdle); % only start the idle timer because we always start idle
+                
+                % timer for position updates
+                obj.TimerPosition = timer('Period',obj.TIMER_POS_PERIOD,...
+                    'BusyMode','drop',...
+                    'ExecutionMode','fixedRate',...
+                    'TimerFcn',@(~,~)obj.updatePos);
                 
             catch exception
-                obj.CamCon.disconnect;
-                obj.LaserCon.close;
-                obj.StageCon.disconnect;
+                
+                try
+                    stop(obj.TimerIdle);
+                catch
+                end
+                try
+                    stop(obj.TimerPosition);
+                catch
+                end
+                try
+                    stop(obj.TimerAcq);
+                catch
+                end
+                obj.CamCon.delete;
+                obj.LaserCon.delete;
+                obj.StageCon.delete;
                 set(obj.MainFigH,'closeRequestFcn','');
                 exception.throw;
             end
             
+            % store the intial position of the axes
+            set(obj.LeftRightDisplayH,'string',sprintf('%.5f',obj.StageCon.getPosition(obj.LeftRightStage)));
+            set(obj.UpDownDisplayH,'string',sprintf('%.5f',obj.StageCon.getPosition(obj.UpDownStage)));
+            set(obj.FocusDisplayH,'string',sprintf('%.5f',obj.StageCon.getPosition(obj.FocusStage)));
+            
+            obj.UpDownSetPos = str2double(get(obj.UpDownDisplayH,'string'));
+            obj.LeftRightSetPos = str2double(get(obj.LeftRightDisplayH,'string'));
+            obj.FocusSetPos = str2double(get(obj.FocusDisplayH,'string'));
+            
             % make what we have visible
             set(obj.MainFigH,'Visible','on');
             
+            % some fixes for matlab bugs - font color is wrong for things
+            % drawn with 'enable' 'off'
+            set(obj.StopCaptH,'enable','off');
             
-            
+            % start timers after we have drawn the figure because the
+            % timers can block apparently
+            start(obj.TimerIdle); % start the idle timer because we always start idle
+            start(obj.TimerPosition);
         end
         
         
@@ -744,6 +920,20 @@ classdef SimpleMscopeGUI < handle
         
         %% UPDATERS (for real-time and to call after every changed button)
         
+        %% updater for stage positions
+        function updatePos(obj)
+            
+            % get the real position of the stages and update the displays
+            set(obj.LeftRightDisplayH,'string',sprintf('%.5f',obj.SwapLR*obj.StageCon.getPosition(obj.LeftRightStage)));
+            set(obj.UpDownDisplayH,'string',sprintf('%.5f',obj.SwapUD*obj.StageCon.getPosition(obj.UpDownStage)));
+            set(obj.FocusDisplayH,'string',sprintf('%.5f',obj.SwapZ*obj.StageCon.getPosition(obj.FocusStage)));
+            
+            % set the desired position (do this second so on the first time
+            obj.StageCon.setPosition(obj.LeftRightStage,obj.LeftRightSetPos);
+            obj.StageCon.setPosition(obj.UpDownStage,obj.UpDownSetPos);
+            obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
+            %% TODO ADD THE TIRF STAGE UPDATER
+        end
         
         %% updater for idle timer
         function updateIdle(obj)
@@ -785,8 +975,8 @@ classdef SimpleMscopeGUI < handle
                         % scale the image
                         set(obj.FrAcqH,'String',sprintf('%i',latestNo),'BackgroundColor',obj.COLOR_STAT_WARN);
                     end
-                  
-                % what happens if the ACQ timer realises the acquistion has stopped    
+                    
+                    % what happens if the ACQ timer realises the acquistion has stopped
                 elseif strcmp(statusNow,'IDLE') && obj.AllowedToStop
                     % make sure the start acquisition buttons are both
                     % available
@@ -794,7 +984,7 @@ classdef SimpleMscopeGUI < handle
                     
                     set(obj.StartVideoH,'enable','on','value',0);
                     set(obj.StartCaptH,'enable','on','value',0);
-                    set(obj.StopCaptH,'enable','off','value',1);
+                    set(obj.StopCaptH,'enable','off','value',1,'ForegroundColor',obj.COLOR_STOP_TEXT);
                     
                     % if in ALEX then stop the lasers after the camera
                     % stops too
@@ -804,9 +994,9 @@ classdef SimpleMscopeGUI < handle
                         obj.RedState = 0;
                         obj.NIRState = 0;
                         % set the buttons to reflect this
-                        set([obj.GreenOnH, obj.RedOnH, obj.NIROnH],'Value',0,'Enable','on');                
+                        set([obj.GreenOnH, obj.RedOnH, obj.NIROnH],'Value',0,'Enable','on');
                     end
-                
+                    
                     % set the state, which makes sure the above can run
                     obj.State = 0; % i.e. idle
                     
@@ -897,6 +1087,23 @@ classdef SimpleMscopeGUI < handle
                 % Do nothing
             end
         end
+        
+        % update display for step size for PI Stages
+        function setStepDisplay(obj,~,~)
+            stepSize = get(obj.PositionSensH,'Value');
+            obj.PosButtonStep = stepSize;
+            
+            dispString = ''; % incase we have something strange
+            if stepSize < 1, dispString = sprintf('%.1f mm',10^stepSize); end
+            if stepSize < 0, dispString = sprintf('%.0f um',10^(stepSize+3));end 
+            if stepSize < -3, dispString = sprintf('%.0f nm',10^(stepSize+6)); end
+            
+            set(obj.StepDisplayH,'string',dispString);
+            
+        end
+        
+        
+        
         %% SPOOLING CALLBACKS
         function setSpoolPath(obj,src,~)
             % make sure this hasn't been called immediately after an
@@ -1093,7 +1300,7 @@ classdef SimpleMscopeGUI < handle
                     
                     % and set the laser power to what we want
                     obj.LaserCon.setGreenLaser(obj.GreenState*obj.GreenPower);
-                end 
+                end
             end
         end % setGreenPower
         
@@ -1119,23 +1326,68 @@ classdef SimpleMscopeGUI < handle
                     
                     % and set the laser power to what we want
                     obj.LaserCon.setRedLaser(obj.RedState*obj.RedPower);
-                end 
+                end
             end
         end
         
         %% CLEANUP
         % clean up function for closing the figure (that gracefully closes
         % the camera)
-        function cleanUp(obj,src,~)
+        function delete(obj,~,~)
             
-            % stop the two timers
-            stop(obj.TimerIdle);
-            stop(obj.TimerAcq);
+            % stop the timers
+            try
+                stop(obj.TimerIdle);
+            catch
+            end
+            try
+                stop(obj.TimerPosition);
+            catch
+            end
+            try
+                stop(obj.TimerAcq);
+            catch
+            end
             
-            obj.CamCon.disconnect; % gracefully disconnect from the camera
-            obj.StageCon.disconnect;
-            obj.LaserCon.close; % exit the card controller
-            delete(src); % and delete the figure
+            obj.CamCon.delete; % gracefully disconnect from the camera
+            obj.StageCon.delete;
+            obj.LaserCon.delete; % exit the card controller
+            delete(obj.MainFigH); % and delete the figure
+        end
+        
+        %% POSITION CHANGING
+        
+        function leftMove(obj,~,~)
+            obj.LeftRightSetPos = obj.LeftRightSetPos + obj.SwapLR*10^obj.PosButtonStep;
+            %obj.StageCon.setPosition(obj.LeftRightStage,obj.LeftRightSetPos);
+            %% TODO Set limits on travel
+        end
+        function rightMove(obj,~,~)
+            obj.LeftRightSetPos = obj.LeftRightSetPos - obj.SwapLR*10^obj.PosButtonStep;
+            %obj.StageCon.setPosition(obj.LeftRightStage,obj.LeftRightSetPos);
+            %% TODO Set limits on travel
+        end
+        
+        function upMove(obj,~,~)
+            obj.UpDownSetPos = obj.UpDownSetPos + obj.SwapUD*10^obj.PosButtonStep;
+            %obj.StageCon.setPosition(obj.UpDownStage,obj.UpDownSetPos);
+            %% TODO Set limits on travel
+        end
+        function downMove(obj,~,~)
+            obj.UpDownSetPos = obj.UpDownSetPos - obj.SwapUD*10^obj.PosButtonStep;
+            %obj.StageCon.setPosition(obj.UpDownStage,obj.UpDownSetPos);
+            %% TODO Set limits on travel
+        end
+        
+        function focusUpMove(obj,~,~)
+            obj.FocusSetPos = obj.FocusSetPos + obj.SwapZ*10^obj.PosButtonStep;
+            %obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
+            %% TODO Set limits on travel
+        end
+        function focusDownMove(obj,~,~)
+            obj.FocusSetPos = obj.FocusSetPos - obj.SwapZ*10^obj.PosButtonStep;
+            %obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
+            %% TODO Set limits on travel
         end
         
         %% CHANGING THE LOOK OF IMAGES
@@ -1218,7 +1470,7 @@ classdef SimpleMscopeGUI < handle
             
             % make sure the video button can only be pressed
             % once
-            set(obj.StopCaptH,'enable','on','Value',0);
+            set(obj.StopCaptH,'enable','on','Value',0,'ForegroundColor',obj.COLOR_STOP_TEXT);
             if get(obj.StartCaptH,'Value') == 1, return; end % don't do anything if startcapt has been hit too
             set(obj.StartCaptH,'enable','inactive');
             set(src,'enable','off');
@@ -1247,7 +1499,7 @@ classdef SimpleMscopeGUI < handle
             
             %% if we are in ALEX mode then start the appropriate card action
             if obj.AlexMode
-                obj.LaserCon.startAlex(obj.AlexSelection,obj.FrameTime,obj.GreenPower);
+                obj.LaserCon.startAlex(obj.AlexSelection,obj.FrameTime,obj.GreenPower,obj.RedPower);
             end
             
             %% finally enable the stop and spool buttons
@@ -1275,7 +1527,7 @@ classdef SimpleMscopeGUI < handle
             
             
             % enable the stop button
-            set(obj.StopCaptH,'enable','on','Value',0);
+            set(obj.StopCaptH,'enable','on','Value',0,'ForegroundColor',obj.COLOR_STOP_TEXT);
             
             % make sure the capture and video buttons can only be pressed
             % once
@@ -1310,7 +1562,7 @@ classdef SimpleMscopeGUI < handle
                     obj.CamCon.startAcquiring
                 catch
                     set(obj.MessageH,'String','CAMERA ERROR - STOP AND RETRY',...
-                    'BackgroundColor',obj.COLOR_STAT_ERR);
+                        'BackgroundColor',obj.COLOR_STAT_ERR);
                 end
             else
                 set(obj.MessageH,'String','CAMERA BUSY',...
@@ -1319,7 +1571,7 @@ classdef SimpleMscopeGUI < handle
             
             %% if we are in ALEX mode, then start the card in the proper mode
             if obj.AlexMode
-                obj.LaserCon.startAlex(obj.AlexSelection,obj.FrameTime,obj.GreenPower);
+                obj.LaserCon.startAlex(obj.AlexSelection,obj.FrameTime,obj.GreenPower,obj.RedPower);
             end
             
             %% start the update timer
@@ -1337,7 +1589,7 @@ classdef SimpleMscopeGUI < handle
             obj.State = 0; % idle
             
             % make sure this button can't be pushed again
-            set(obj.StopCaptH,'enable','off');
+            set(obj.StopCaptH,'enable','off','ForegroundColor',obj.COLOR_STOP_TEXT);
             set(obj.StartVideoH,'enable','inactive');
             set(obj.StartCaptH,'enable','inactive');
             

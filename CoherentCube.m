@@ -29,14 +29,15 @@ classdef CoherentCube < handle
             % understands us
             for ii = 1:obj.NUM_ATTEMPT
                 statusString = obj.sendAndRec('?STA');
-                if strcmp(statusString,'2') || strcmp(statusString,'3')
+                if strcmp(statusString,'STA=2') || strcmp(statusString,'STA=3')
                     % if the laser is idle or on
                     break % we are ok
                 end
-                fprintf('\nError communicating with red laser (attempr %i)\n',ii);
+                fprintf('\nError communicating with red laser (attempt %i)\n',ii);
             end
             
-            obj.MaxPower = str2double(obj.sendAndRec('?MAXLP'));
+            powerString = obj.sendAndRec('?MAXLP');
+            obj.MaxPower = str2double(powerString(7:end));
             
             % Set some default settings
             obj.sendAndRec('P=0');
@@ -47,13 +48,18 @@ classdef CoherentCube < handle
         end
         
         function setPower(obj,powerFraction)
-            obj.sendAndRec('L=1');
+            % seems like setting the power only applies in CW mode
+            obj.sendAndRec('P=0');
+            obj.sendAndRec('L=1'); % so it doesn't flicker during set
+            obj.sendAndRec('CW=1'); % set CW        
             powerFraction = min(powerFraction,1);
             powerFraction = max(powerFraction,0);
-            obj.sendAndRec(sprintf('P=%.1f',powerFraction*obj.MaxPower));
+            obj.sendAndRec(sprintf('P=%.2f',powerFraction*obj.MaxPower));    % set power       
+            % fprintf('\n%s\n',obj.sendAndRec('?SP')); % check (set) power
+            obj.sendAndRec('CW=0'); % back to TTL control
         end
         
-        function close(obj)
+        function delete(obj)
             fprintf('\nDisconnecting from red laser\n')
             try
                 obj.sendAndRec('L=0');
@@ -70,7 +76,7 @@ classdef CoherentCube < handle
         function stringResponse = sendAndRec(obj,stringSend)
             if obj.TEST_MODE
                 fprintf('\nSending %s to red laser\n',stringSend);
-                stringResponse = '2';
+                stringResponse = 'STA=2';
             else
                 % send the query
                 fprintf(obj.SerialConnection,stringSend);

@@ -53,7 +53,7 @@ classdef CameraController < handle
             if initialiseCamera == obj.DRV_SUCCESS
                 fprintf('Success\n')
             else
-                MException('MScope:AndorErr','Camera Connection failied').throw;
+                MException('MScope:AndorErr','Camera Connection failed\nRESTART MATLAB AND TRY AGAIN').throw;
             end
             % Apply default settings
             if initialSettings ~= obj.DRV_SUCCESS
@@ -234,7 +234,7 @@ classdef CameraController < handle
             end % of if-else
         end % getMinRepeatTime
         
-        function disconnect(obj)
+        function delete(obj)
             % closes the camera
             % first, check if it is acquiring and cancel this
             obj.assertConnected; % error if we aren't connected

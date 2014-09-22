@@ -7,7 +7,7 @@ classdef CardController < handle
     
     properties (SetAccess = private)
         % where to find the LabVIEW VIs that will be run when requested
-        ViLocation = 'C:\Users\LocalAdmin\Documents\MATLAB\MicroscopeController\CardControlVIs';
+        ViLocation = 'C:\User Data\Peter\MATLAB\MicroscopeController\CardControlVIs';
         % used to make sure we only have one VI running at a time
         IsRunning = false;
         LabviewActXServer;
@@ -113,7 +113,7 @@ classdef CardController < handle
             end
         end % setNIRLaser
         
-        function startAlex(obj,alexSelection,frameTime,greenAmp)
+        function startAlex(obj,alexSelection,frameTime,greenAmp,redPower)
             % uses the VI 'trALEX.vi' to start three colour ALEX
             % acquisition. The frame time is in MILLISECONDS
             
@@ -144,6 +144,7 @@ classdef CardController < handle
                     if obj.RedBusy
                         obj.RedVi.Abort;
                         obj.RedBusy = false;
+                        obj.CoherentCon.setPower(redPower);
                     end
                     alexViToRun = 'DuALEX_RG.vi';
                     freq = 1/(frameTime*2); % since it is two color and freq is the overall cycle time
@@ -155,6 +156,7 @@ classdef CardController < handle
                     if obj.RedBusy
                         obj.RedVi.Abort;
                         obj.RedBusy = false;
+                        obj.CoherentCon.setPower(redPower);
                     end
                     if obj.NIRBusy
                         obj.NIRVi.Abort;
@@ -181,6 +183,7 @@ classdef CardController < handle
                     if obj.RedBusy
                         obj.RedVi.Abort;
                         obj.RedBusy = false;
+                        obj.CoherentCon.setPower(redPower);
                     end
                     alexViToRun = 'DuALEX_RN.vi';
                     freq = 1/(frameTime*2); % since it is two color
@@ -192,6 +195,7 @@ classdef CardController < handle
                     if obj.RedBusy
                         obj.RedVi.Abort;
                         obj.RedBusy = false;
+                        obj.CoherentCon.setPower(redPower); % set the red power here since we just turned it off
                     end
                     if obj.NIRBusy
                         obj.NIRVi.Abort;
@@ -227,7 +231,7 @@ classdef CardController < handle
                 
         end
         
-        function close(obj) % deletes the server
+        function delete(obj) % deletes the server
             try
                 if obj.IsRunning
                     obj.CurrentVi.release;
@@ -243,7 +247,7 @@ classdef CardController < handle
                 obj.RedVi.release
             catch
             end
-            obj.CoherentCon.close;
+            obj.CoherentCon.delete;
             obj.LabviewActXServer.delete;
         end
     end
