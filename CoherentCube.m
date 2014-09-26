@@ -36,12 +36,12 @@ classdef CoherentCube < handle
                 fprintf('\nError communicating with red laser (attempt %i)\n',ii);
             end
             
-            powerString = obj.sendAndRec('?MAXLP');
-            obj.MaxPower = str2double(powerString(7:end));
-            
             % Set some default settings
             obj.sendAndRec('P=0');
             obj.sendAndRec('L=0'); % laser off
+            powerString = obj.sendAndRec('?MAXLP');
+            obj.MaxPower = str2double(powerString(strfind(powerString,'=')+1:end));
+            if isnan(obj.MaxPower), MException('MScope:CoherentError','Can''t get the maximum power').throw; end
             obj.sendAndRec('CW=0'); % TTL control active
             obj.sendAndRec('ANA=0'); % no analog or external power control
             obj.sendAndRec('EXT=0');
@@ -49,7 +49,7 @@ classdef CoherentCube < handle
         
         function setPower(obj,powerFraction)
             % seems like setting the power only applies in CW mode
-            obj.sendAndRec('P=0');
+            %obj.sendAndRec('P=0');
             obj.sendAndRec('L=1'); % so it doesn't flicker during set
             obj.sendAndRec('CW=1'); % set CW        
             powerFraction = min(powerFraction,1);
@@ -81,7 +81,7 @@ classdef CoherentCube < handle
                 % send the query
                 fprintf(obj.SerialConnection,stringSend);
                 % receive the answer
-                stringResponse = fscanf(obj.SerialConnection,'%s');
+                stringResponse = fgetl(obj.SerialConnection);
             end
         end
     end

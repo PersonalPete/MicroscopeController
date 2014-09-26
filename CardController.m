@@ -35,7 +35,12 @@ classdef CardController < handle
             
             % construct the active x server
             obj.LabviewActXServer = actxserver('LabVIEW.Application');
-        end % no-arg constructor
+            
+            obj.setRedLaser(0);
+            obj.setNIRLaser(0);
+            obj.setGreenLaser(0);
+            
+        end % constructor
         
         function setGreenLaser(obj,power)
             if power > 1 || power < 0

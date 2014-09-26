@@ -4,18 +4,29 @@ classdef SimpleMscopeGUI < handle
     
     properties (SetAccess = private)
         
+        % If the power meter doesn't ocnnect or a different one is used
+        % then you may have to change the ID used for the connection in
+        % PM100USBController to match the Power Meter ID found in the
+        % Thorlabs application 'PM100-200 Utility' at the start
+        
         %
-        RedPort = 'TEST'; % 'COM5';
+        RedPort = 'COM5'; % 'TEST';
         PosButtonStep = -2; % 10^-PosButtonStep (in mm) (Default - can be changed by user with slider)
-        SwapLR = 1; % choose -1 or 1 to change left right behaviour
+        SwapLR = +1; % choose -1 or 1 to change left right behaviour
         SwapUD = 1; % choose -1 or 1 to change up down
         SwapZ = -1; % ditto
+        
+        % Software limits for travel range
+        ZLim = [-4 +4];
+        UDLim = [-5 +5];
+        RLLim = [-6 +6];
         
         % some defaults
         DFT_TRIGGER_FAST = 0; % set this to 1 for fast triggering
         TIMER_IDLE_PERIOD = 0.2; % (\s between updating displayed info)
         TIMER_ACQ_PERIOD = 0.033; % update at 30 Hz in this mode (maximum)
         TIMER_POS_PERIOD = 0.2; % for querying the position (maybe this is too fast)
+        TIMER_POW_PERIOD = 2.2; % slow because it can't read much faster (in single read mode)
         
         % camera controller object
         CamCon;
@@ -33,10 +44,15 @@ classdef SimpleMscopeGUI < handle
         FocusStage = 2;
         TirfStage = 1;
         
+        % power meter controller
+        PowerMeterCon;
+        PowerMeterWave = 532; % default powermeter wavelength
+        
         % timer object for real-time updating
         TimerIdle; % runs when system is idle
         TimerAcq; % runs when camera is acquiring/videoing
         TimerPosition; % for position feedback
+        TimerPowerMeter; % for the power meter reading
         
         % handles to displayed objects - i.e. without callbacks
         MainFigH;
@@ -46,6 +62,9 @@ classdef SimpleMscopeGUI < handle
         FrAcqH; % how many frames acquired
         FrameRateH;
         MessageH;
+        
+        % power meter reading
+        PowerMeterReadH;
         
         % position displays
         LeftRightDisplayH;
@@ -67,13 +86,20 @@ classdef SimpleMscopeGUI < handle
         CwOnH;
         AlexSelectionH;
         
+        % Setting lasers on (mostly in CW mode)
         GreenOnH;
         RedOnH;
         NIROnH;
         
+        % setting laser powers
         GreenPowerH;
         RedPowerH;
-        NIRPowerH;
+        NIRPowerH; % this is just a box so we can write something down as a reminder
+        
+        % Setting the power meter wavelength
+        GreenPMWaveH;
+        RedPMWaveH;
+        NIRPMWaveH
         
         SetFrameH;  % for the number of frames
         
@@ -83,7 +109,7 @@ classdef SimpleMscopeGUI < handle
         LeftPosH;
         RightPosH;
         FocusUpH;
-        FocusDownH;        
+        FocusDownH;
         
         StepDisplayH; % display for the step size
         PositionSensH; % slider to choose step size
@@ -106,6 +132,12 @@ classdef SimpleMscopeGUI < handle
         UpDownSetPos;
         LeftRightSetPos;
         FocusSetPos;
+        
+        % positions to check the last set position against, so we don't
+        % re-set the same position and waste time
+        LeftRightLastPos = NaN;
+        UpDownLastPos = NaN;
+        FocusLastPos = NaN;
         
         AlexMode = 0; % this is set to be the default on construction
         AlexSelection = 1; % this is which alex type (R-G or R-G-N etc...) is selected
@@ -152,6 +184,8 @@ classdef SimpleMscopeGUI < handle
         
         COLOR_INPUT_BGD = [0.62 0.71 0.80]; % [0.6 1.0 0.6];
         COLOR_INPUT_TEXT = [0.2 0.2 0.2]; % [0 0 0];
+        
+        COLOR_BUSY_BGD = [0.72 0.81 0.90];
         
         COLOR_AUTO_BGD = [0.24 0.35 0.67];%[0.8 0.0 0.0];
         COLOR_AUTO_TEXT = [1.0 1.0 1.0];
@@ -201,16 +235,29 @@ classdef SimpleMscopeGUI < handle
         % constructor
         function obj = SimpleMscopeGUI
             
+            % close all existing serial and USB interfaces -
+            connectedInstruments = instrfind();
+            for ii = 1:length(connectedInstruments)
+                try
+                    fclose(connectedInstruments(ii));
+                catch
+                end
+            end
+            
             % builds our camera controller and applies default camera settings
             obj.CamCon = CameraController;
             
             % builds the laser/card controller - TODO: Should set up the
             % Red laser
-            fprintf('\nConnecting to NI PCIe-6351...\n');
+            fprintf('\nConnecting to NI PCIe-6351...');
             obj.LaserCon = CardController(obj.RedPort);
             
-            fprintf('\nConnecting to stages\n');
+            fprintf(' ...Success\nConnecting to stages...');
             obj.StageCon = StageController(obj.NumStages);
+            
+            fprintf(' ...Success\nConnecting to power meter...');
+            obj.PowerMeterCon = PM100USBController;
+            fprintf(' ...Success\n');
             
             try % in a try-catch so we always disconnect from camera
                 % build the main figure - visibility off for now
@@ -507,6 +554,75 @@ classdef SimpleMscopeGUI < handle
                     'String',sprintf('manual'),...
                     'Visible','on');
                 
+                %% POWER METER CONTROLS
+                
+                obj.PowerMeterReadH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','text',...
+                    'BackgroundColor',obj.COLOR_INFO_BGD,...
+                    'Units','normalized',....
+                    'Position',[0.80 0.65, 0.2, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.6,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_INFO_TEXT,...
+                    'String','',...
+                    'Visible','on');
+                
+                obj.GreenPMWaveH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','ToggleButton',...
+                    'BackgroundColor',obj.COLOR_532_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.80, 0.72, 0.0666, 0.03],...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontUnits','Normalized',...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_532_TEXT,...
+                    'String','532',...
+                    'Visible','on',...
+                    'Max',1,...
+                    'Min',0,...
+                    'Enable','inactive',...
+                    'Value',1,...
+                    'Callback',@obj.ToggleGreenPMWave);
+                
+                obj.RedPMWaveH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','ToggleButton',...
+                    'BackgroundColor',obj.COLOR_640_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.8666, 0.72, 0.0666, 0.03],...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontUnits','Normalized',...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_640_TEXT,...
+                    'String','640',...
+                    'Visible','on',...
+                    'Max',1,...
+                    'Min',0,...
+                    'Enable','on',...
+                    'Value',0,...
+                    'Callback',@obj.ToggleRedPMWave);
+                
+                obj.NIRPMWaveH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','ToggleButton',...
+                    'BackgroundColor',obj.COLOR_730_BGD,...
+                    'Units','Normalized',...
+                    'FontUnits','Normalized',...
+                    'Position',[0.9333, 0.72, 0.0666, 0.03],...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_730_TEXT,...
+                    'String','730',...
+                    'Visible','on',...
+                    'Max',1,...
+                    'Min',0,...
+                    'Enable','on',...
+                    'Value',0,...
+                    'Callback',@obj.ToggleNIRPMWave);
+                
                 %% STAGE CONTROLS
                 
                 % indicators
@@ -514,7 +630,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.80, 0.60, 0.0666, 0.04],...
+                    'Position',[0.80, 0.50, 0.0666, 0.04],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -527,7 +643,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.8666, 0.60, 0.0666, 0.04],...
+                    'Position',[0.8666, 0.50, 0.0666, 0.04],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -540,7 +656,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.9333, 0.60, 0.0666, 0.04],...
+                    'Position',[0.9333, 0.50, 0.0666, 0.04],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -556,7 +672,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','pushbutton',...
                     'BackgroundColor',obj.COLOR_POS_BGD,...
                     'Units','normalized',....
-                    'Position',[0.80 0.65, 0.0666, 0.05],...
+                    'Position',[0.80 0.55, 0.0666, 0.05],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.4,...
@@ -570,7 +686,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','pushbutton',...
                     'BackgroundColor',obj.COLOR_POS_BGD,...
                     'Units','normalized',....
-                    'Position',[0.80 0.70, 0.0666, 0.05],...
+                    'Position',[0.80 0.60, 0.0666, 0.05],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.4,...
@@ -584,7 +700,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','pushbutton',...
                     'BackgroundColor',obj.COLOR_POS_BGD,...
                     'Units','normalized',....
-                    'Position',[0.8666 0.70, 0.0666, 0.05],...
+                    'Position',[0.8666 0.60, 0.0666, 0.05],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.4,...
@@ -598,7 +714,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','pushbutton',...
                     'BackgroundColor',obj.COLOR_POS_BGD,...
                     'Units','normalized',....
-                    'Position',[0.8666 0.65, 0.0666, 0.05],...
+                    'Position',[0.8666 0.55, 0.0666, 0.05],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.4,...
@@ -612,7 +728,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','pushbutton',...
                     'BackgroundColor',obj.COLOR_POS_BGD,...
                     'Units','normalized',....
-                    'Position',[0.9333 0.70, 0.0666, 0.05],...
+                    'Position',[0.9333 0.60, 0.0666, 0.05],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.4,...
@@ -626,7 +742,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','pushbutton',...
                     'BackgroundColor',obj.COLOR_POS_BGD,...
                     'Units','normalized',....
-                    'Position',[0.9333 0.65, 0.0666, 0.05],...
+                    'Position',[0.9333 0.55, 0.0666, 0.05],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.4,...
@@ -644,7 +760,7 @@ classdef SimpleMscopeGUI < handle
                     'Value',obj.PosButtonStep,...
                     'SliderStep',[1/6 1/6],...
                     'Units','normalized',...
-                    'Position',[0.80, 0.55, 0.12333, 0.05],...
+                    'Position',[0.80, 0.45, 0.12333, 0.05],...
                     'Visible','on',...
                     'Callback',@obj.setStepDisplay);
                 
@@ -652,7 +768,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.9333, 0.55, 0.0666, 0.04],...
+                    'Position',[0.9333, 0.45, 0.0666, 0.04],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -834,12 +950,12 @@ classdef SimpleMscopeGUI < handle
                 % Status updates when IDLE
                 obj.TimerIdle = timer('Period',obj.TIMER_IDLE_PERIOD,...
                     'BusyMode','drop',... % only one timer queued
-                    'ExecutionMode','fixedRate',...
+                    'ExecutionMode','fixedSpacing',...
                     'TimerFcn',@(~,~)obj.updateIdle);
                 
                 obj.TimerAcq = timer('Period',obj.TIMER_ACQ_PERIOD,...
                     'BusyMode','drop',... % only one timer queued
-                    'ExecutionMode','fixedRate',...
+                    'ExecutionMode','fixedSpacing',...
                     'TimerFcn',@(~,~)obj.updateAcq,...
                     'StopFcn',@(~,~)set([obj.FrameRateH; obj.MessageH; obj.FrAcqH],'String','-','BackgroundColor',obj.COLOR_STAT_OK));
                 
@@ -847,8 +963,14 @@ classdef SimpleMscopeGUI < handle
                 % timer for position updates
                 obj.TimerPosition = timer('Period',obj.TIMER_POS_PERIOD,...
                     'BusyMode','drop',...
-                    'ExecutionMode','fixedRate',...
+                    'ExecutionMode','fixedSpacing',...
                     'TimerFcn',@(~,~)obj.updatePos);
+                
+                obj.TimerPowerMeter = timer('Period',obj.TIMER_POW_PERIOD,...
+                    'BusyMode','drop',...
+                    'ExecutionMode','fixedSpacing',...
+                    'TimerFcn',@(~,~)obj.updatePowerMeterReading);
+                
                 
             catch exception
                 
@@ -891,6 +1013,7 @@ classdef SimpleMscopeGUI < handle
             % timers can block apparently
             start(obj.TimerIdle); % start the idle timer because we always start idle
             start(obj.TimerPosition);
+            start(obj.TimerPowerMeter);
         end
         
         
@@ -923,15 +1046,35 @@ classdef SimpleMscopeGUI < handle
         %% updater for stage positions
         function updatePos(obj)
             
-            % get the real position of the stages and update the displays
-            set(obj.LeftRightDisplayH,'string',sprintf('%.5f',obj.SwapLR*obj.StageCon.getPosition(obj.LeftRightStage)));
-            set(obj.UpDownDisplayH,'string',sprintf('%.5f',obj.SwapUD*obj.StageCon.getPosition(obj.UpDownStage)));
-            set(obj.FocusDisplayH,'string',sprintf('%.5f',obj.SwapZ*obj.StageCon.getPosition(obj.FocusStage)));
             
-            % set the desired position (do this second so on the first time
-            obj.StageCon.setPosition(obj.LeftRightStage,obj.LeftRightSetPos);
-            obj.StageCon.setPosition(obj.UpDownStage,obj.UpDownSetPos);
-            obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
+            % set the desired position if it has changed from the last iteration
+            
+            if obj.LeftRightSetPos ~= obj.LeftRightLastPos
+                obj.StageCon.setPosition(obj.LeftRightStage,obj.LeftRightSetPos);
+            end
+            if obj.UpDownSetPos ~= obj.UpDownLastPos
+                obj.StageCon.setPosition(obj.UpDownStage,obj.UpDownSetPos);
+            end
+            if obj.FocusSetPos ~= obj.FocusLastPos
+                obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
+            end
+            obj.LeftRightLastPos = obj.LeftRightSetPos;
+            obj.UpDownLastPos = obj.UpDownSetPos;
+            obj.FocusLastPos = obj.FocusSetPos;
+            
+            % don't update every position in every callback (for
+            % smoothness)
+            runCount = get(obj.TimerPosition,'TasksExecuted');
+            
+            switch mod(runCount,3)                
+            % get the real position of the stages and update the displays
+                case 0
+                    set(obj.LeftRightDisplayH,'string',sprintf('%.5f',-obj.SwapLR*obj.StageCon.getPosition(obj.LeftRightStage)));           
+                case 1
+                    set(obj.UpDownDisplayH,'string',sprintf('%.5f',obj.SwapUD*obj.StageCon.getPosition(obj.UpDownStage)));
+                case 2
+                    set(obj.FocusDisplayH,'string',sprintf('%.5f',obj.SwapZ*obj.StageCon.getPosition(obj.FocusStage)));
+            end
             %% TODO ADD THE TIRF STAGE UPDATER
         end
         
@@ -986,6 +1129,8 @@ classdef SimpleMscopeGUI < handle
                     set(obj.StartCaptH,'enable','on','value',0);
                     set(obj.StopCaptH,'enable','off','value',1,'ForegroundColor',obj.COLOR_STOP_TEXT);
                     
+                    drawnow; % so that it looks like we will be able to change modes
+                    
                     % if in ALEX then stop the lasers after the camera
                     % stops too
                     if obj.AlexMode
@@ -1010,6 +1155,15 @@ classdef SimpleMscopeGUI < handle
         end
         
         %% other updaters
+        
+        function updatePowerMeterReading(obj)
+            % call this to update the power meter reading (on a timer)
+            if obj.State == 0;
+                set(obj.PowerMeterReadH,'String',sprintf('%.1f mW',1000*obj.PowerMeterCon.measurePower(obj.PowerMeterWave)));
+            else
+                set(obj.PowerMeterReadH,'String','-');
+            end
+        end
         
         function updateFrameRate(obj)
             % make sure the frame rate indicator says the correct frame rate
@@ -1095,7 +1249,7 @@ classdef SimpleMscopeGUI < handle
             
             dispString = ''; % incase we have something strange
             if stepSize < 1, dispString = sprintf('%.1f mm',10^stepSize); end
-            if stepSize < 0, dispString = sprintf('%.0f um',10^(stepSize+3));end 
+            if stepSize < 0, dispString = sprintf('%.0f um',10^(stepSize+3));end
             if stepSize < -3, dispString = sprintf('%.0f nm',10^(stepSize+6)); end
             
             set(obj.StepDisplayH,'string',dispString);
@@ -1283,6 +1437,12 @@ classdef SimpleMscopeGUI < handle
                 % if we aren't allowed to set the power then don't
                 set(src,'String',sprintf('%.1f %%',obj.GreenPower*100));
             else
+                % set the background color to busy so the user knows we got
+                % their input
+                originalColor = get(src,'BackgroundColor');
+                set(src,'BackgroundColor',obj.COLOR_BUSY_BGD);
+                drawnow; % make sure the screen updates
+                % parse the input string to allow for a % at the end of it
                 inputPowerString = get(src,'String');
                 if strncmp(fliplr(inputPowerString),'%',1)
                     inputPowerString = inputPowerString(1:end-1);
@@ -1301,6 +1461,7 @@ classdef SimpleMscopeGUI < handle
                     % and set the laser power to what we want
                     obj.LaserCon.setGreenLaser(obj.GreenState*obj.GreenPower);
                 end
+                set(src,'BackgroundColor',originalColor);
             end
         end % setGreenPower
         
@@ -1309,6 +1470,12 @@ classdef SimpleMscopeGUI < handle
                 % if we aren't allowed to set the power then don't
                 set(src,'String',sprintf('%.1f %%',obj.RedPower*100));
             else
+                % update the background of the input so the user knows we
+                % are working on it
+                originalColor = get(src,'BackgroundColor');
+                set(src,'BackgroundColor',obj.COLOR_BUSY_BGD);
+                drawnow; % make sure the screen updates
+                % same as green (ish) parse the string
                 inputPowerString = get(src,'String');
                 if strncmp(fliplr(inputPowerString),'%',1)
                     inputPowerString = inputPowerString(1:end-1);
@@ -1327,67 +1494,78 @@ classdef SimpleMscopeGUI < handle
                     % and set the laser power to what we want
                     obj.LaserCon.setRedLaser(obj.RedState*obj.RedPower);
                 end
+                set(src,'BackgroundColor',originalColor);
             end
         end
         
-        %% CLEANUP
-        % clean up function for closing the figure (that gracefully closes
-        % the camera)
-        function delete(obj,~,~)
-            
-            % stop the timers
-            try
-                stop(obj.TimerIdle);
-            catch
-            end
-            try
-                stop(obj.TimerPosition);
-            catch
-            end
-            try
-                stop(obj.TimerAcq);
-            catch
-            end
-            
-            obj.CamCon.delete; % gracefully disconnect from the camera
-            obj.StageCon.delete;
-            obj.LaserCon.delete; % exit the card controller
-            delete(obj.MainFigH); % and delete the figure
+        %% POWER METER CALLBACKS
+        
+        function ToggleGreenPMWave(obj,~,~)
+            obj.PowerMeterWave = 532; % set the power meter wavelength so when it is queried it is useing the correct wavelenght
+            set(obj.GreenPMWaveH,'Value',1,'enable','off'); % pushed and greyed out
+            set([obj.RedPMWaveH obj.NIRPMWaveH],'enable','on','value',0); % the other power meter powers are un pushed and can be pushed
         end
+        
+        function ToggleRedPMWave(obj,~,~)
+            obj.PowerMeterWave = 640; % set the power meter wavelength so when it is queried it is useing the correct wavelenght
+            set(obj.RedPMWaveH,'Value',1,'enable','off'); % pushed and greyed out
+            set([obj.NIRPMWaveH obj.GreenPMWaveH],'enable','on','value',0); % the other power meter powers are un pushed and can be pushed
+        end
+        
+        function ToggleNIRPMWave(obj,~,~)
+            obj.PowerMeterWave = 730; % set the power meter wavelength so when it is queried it is useing the correct wavelenght
+            set(obj.NIRPMWaveH,'Value',1,'enable','off'); % pushed and greyed out
+            set([obj.GreenPMWaveH obj.RedPMWaveH],'enable','on','value',0); % the other power meter powers are un pushed and can be pushed
+        end
+        
+        
+        
         
         %% POSITION CHANGING
         
         function leftMove(obj,~,~)
-            obj.LeftRightSetPos = obj.LeftRightSetPos + obj.SwapLR*10^obj.PosButtonStep;
+            tmpPos = obj.LeftRightSetPos + obj.SwapLR*10^obj.PosButtonStep;
+            tmpPos = min(tmpPos,max(obj.RLLim));
+            obj.LeftRightSetPos = max(tmpPos,min(obj.RLLim));
             %obj.StageCon.setPosition(obj.LeftRightStage,obj.LeftRightSetPos);
-            %% TODO Set limits on travel
+            
         end
         function rightMove(obj,~,~)
-            obj.LeftRightSetPos = obj.LeftRightSetPos - obj.SwapLR*10^obj.PosButtonStep;
+            tmpPos = obj.LeftRightSetPos - obj.SwapLR*10^obj.PosButtonStep;
+            tmpPos = min(tmpPos,max(obj.RLLim));
+            obj.LeftRightSetPos = max(tmpPos,min(obj.RLLim));
             %obj.StageCon.setPosition(obj.LeftRightStage,obj.LeftRightSetPos);
-            %% TODO Set limits on travel
+            
         end
         
         function upMove(obj,~,~)
-            obj.UpDownSetPos = obj.UpDownSetPos + obj.SwapUD*10^obj.PosButtonStep;
+            tmpPos = obj.UpDownSetPos + obj.SwapUD*10^obj.PosButtonStep;
+            tmpPos = min(tmpPos,max(obj.UDLim));
+            obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));
             %obj.StageCon.setPosition(obj.UpDownStage,obj.UpDownSetPos);
-            %% TODO Set limits on travel
+            
         end
         function downMove(obj,~,~)
-            obj.UpDownSetPos = obj.UpDownSetPos - obj.SwapUD*10^obj.PosButtonStep;
+            tmpPos = obj.UpDownSetPos - obj.SwapUD*10^obj.PosButtonStep;
+            tmpPos = min(tmpPos,max(obj.UDLim));
+            obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));
             %obj.StageCon.setPosition(obj.UpDownStage,obj.UpDownSetPos);
-            %% TODO Set limits on travel
+            
         end
         
         function focusUpMove(obj,~,~)
-            obj.FocusSetPos = obj.FocusSetPos + obj.SwapZ*10^obj.PosButtonStep;
+            tmpPos = obj.FocusSetPos + obj.SwapZ*10^obj.PosButtonStep;
+            tmpPos = min(tmpPos,max(obj.ZLim));
+            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
             %obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
-            %% TODO Set limits on travel
+            
         end
         function focusDownMove(obj,~,~)
-            obj.FocusSetPos = obj.FocusSetPos - obj.SwapZ*10^obj.PosButtonStep;
+            tmpPos = obj.FocusSetPos - obj.SwapZ*10^obj.PosButtonStep;
+            tmpPos = min(tmpPos,max(obj.ZLim));
+            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
             %obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
-            %% TODO Set limits on travel
+            
         end
         
         %% CHANGING THE LOOK OF IMAGES
@@ -1600,6 +1778,36 @@ classdef SimpleMscopeGUI < handle
             set(obj.StartVideoH,'enable','on','Value',0);
             set(obj.StartCaptH,'enable','on','Value',0);
         end
+        
+        %% CLEANUP
+        % clean up function for closing the figure (that gracefully closes
+        % the camera)
+        function delete(obj,~,~)
+            
+            % stop the timers
+            try
+                stop(obj.TimerIdle);
+            catch
+            end
+            try
+                stop(obj.TimerPosition);
+            catch
+            end
+            try
+                stop(obj.TimerAcq);
+            catch
+            end
+            try
+                stop(obj.TimerPow);
+            catch
+            end
+            
+            obj.CamCon.delete; % gracefully disconnect from the camera
+            obj.StageCon.delete;
+            obj.LaserCon.delete; % exit the card controller
+            delete(obj.MainFigH); % and delete the figure
+        end
+        
     end
     
 end

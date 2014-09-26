@@ -54,7 +54,6 @@ classdef StageController < handle
         
         function position = getPosition(obj,controller)
             % UNITS ARE MILLIMETERS
-            position = 0;
             position = getPos(obj.ControllerID(controller));
         end
         
