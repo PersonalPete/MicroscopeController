@@ -2,13 +2,13 @@ classdef PM100USBController < handle
     properties (SetAccess = private)
         VisaConnection;
         LastRead = NaN;
-        READ_DELAY = 2; % read no faster than every 2 seconds
+        READ_DELAY = 1; % read no faster than every 1 seconds
         LastPower = NaN;
     end
     methods (Access = public)
         function obj = PM100USBController()
             % Create the USB connection
-            obj.VisaConnection = visa('ni','USB0::0x1313::0x8072::P2001130::INSTR');
+            obj.VisaConnection = visa('ni','USB0::0x1313::0x8072::P2003799::INSTR');
             fopen(obj.VisaConnection); % open the connection
             fprintf(obj.VisaConnection,'*IDN?'); % get the identification of the object we connected to
             idnResponse = fgetl(obj.VisaConnection);
@@ -24,7 +24,6 @@ classdef PM100USBController < handle
             if isnan(obj.LastRead) || toc(obj.LastRead) > obj.READ_DELAY
                 obj.LastRead = tic;
                 % set the wavelength
-                fprintf(obj.VisaConnection,'ABOR'); % abort measurement at previous wavlength
                 fprintf(obj.VisaConnection,'CORR:WAV %i',round(wavelength));
                 % take the measurement
                 fprintf(obj.VisaConnection,'INIT');

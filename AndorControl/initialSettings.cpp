@@ -26,6 +26,7 @@
 #define DFT_AMP 0 
 #define DFT_PREA_GAIN 0
 #define DFT_EMGAIN_MODE 1
+#define DFT_EMGAIN_ADV 1 // allow high gains
 #define DFT_EMCCD_GAIN 0
 #define DFT_HSS 0 
 #define DFT_VSS 3 
@@ -50,7 +51,7 @@
 
 #define DFT_TEMP -60
 
-#define NUM_SETTINGS 22
+#define NUM_SETTINGS 23
 
 // The entry point for mex
 void
@@ -80,31 +81,32 @@ void
     ac[3] = SetOutputAmplifier(DFT_AMP);
     ac[4] = SetPreAmpGain(DFT_PREA_GAIN);
     ac[5] = SetEMGainMode(DFT_EMGAIN_MODE);
-    ac[6] = SetEMCCDGain(DFT_EMCCD_GAIN); // no EM gain
-    ac[7] = SetHSSpeed(DFT_AMP,DFT_HSS); // type 0 (EM) shift speed 0 (10 MHz)
-    ac[8] = SetVSSpeed(DFT_VSS); // 3 corresponds to 1.7 us (Camera recommends 4)
-    ac[9] = SetBaselineClamp(DFT_BASE_CLAMP);
+    ac[6] = SetEMAdvanced(DFT_EMGAIN_ADV);
+    ac[7] = SetEMCCDGain(DFT_EMCCD_GAIN); // no EM gain
+    ac[8] = SetHSSpeed(DFT_AMP,DFT_HSS); // type 0 (EM) shift speed 0 (10 MHz)
+    ac[9] = SetVSSpeed(DFT_VSS); // 3 corresponds to 1.7 us (Camera recommends 4)
+    ac[10] = SetBaselineClamp(DFT_BASE_CLAMP);
     
 
-    ac[10] = SetAcquisitionMode(DFT_ACQ_MODE); 
-    ac[11] = SetReadMode(DFT_READ_MODE);
-    ac[12] = SetFrameTransferMode(DFT_FRAME_TRANS_MODE);
+    ac[11] = SetAcquisitionMode(DFT_ACQ_MODE); 
+    ac[12] = SetReadMode(DFT_READ_MODE);
+    ac[13] = SetFrameTransferMode(DFT_FRAME_TRANS_MODE);
     
-    ac[13] = SetTriggerMode(DFT_TRIGGER_MODE); 
-    ac[14] = SetFastExtTrigger(DFT_TRIGGER_FAST);
+    ac[14] = SetTriggerMode(DFT_TRIGGER_MODE); 
+    ac[15] = SetFastExtTrigger(DFT_TRIGGER_FAST);
            
-    ac[15] = SetKineticCycleTime(DFT_KIN);
-    ac[16] = SetAccumulationCycleTime(DFT_ACC);
-    ac[17] = SetExposureTime(DFT_EXP); 
+    ac[16] = SetKineticCycleTime(DFT_KIN);
+    ac[17] = SetAccumulationCycleTime(DFT_ACC);
+    ac[18] = SetExposureTime(DFT_EXP); 
     
-    ac[18] = SetNumberKinetics(DFT_KIN_NUM);
-    ac[19] = SetNumberAccumulations(1); // don't accumulate
+    ac[19] = SetNumberKinetics(DFT_KIN_NUM);
+    ac[20] = SetNumberAccumulations(1); // don't accumulate
     
-    ac[20] = SetSpool(DFT_SPOOL,5,"SpoolTarget/defaultSpoolName",10);
+    ac[21] = SetSpool(DFT_SPOOL,5,"SpoolTarget/defaultSpoolName",10);
     
     int xhpixels, yvpixels;
-    ac[21] = GetDetector(&xhpixels,&yvpixels);
-    ac[22] = SetImage(1,1,1,xhpixels,1,yvpixels); // Acquire the whole image with no binning
+    ac[22] = GetDetector(&xhpixels,&yvpixels);
+    ac[23] = SetImage(1,1,1,xhpixels,1,yvpixels); // Acquire the whole image with no binning
     
     /*CHECK THEY WENT OK */
     

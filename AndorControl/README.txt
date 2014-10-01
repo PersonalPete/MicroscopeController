@@ -1,0 +1,1 @@
+mex -I"./" mexegcpp.cpp atmcd64m.lib

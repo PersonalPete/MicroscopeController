@@ -1,11 +1,17 @@
-/* setAcqMode.cpp
+/* setCropAndBin.cpp
  *
- * ARGUMENTS: INT ACQ_MODE = 3 for kinetics (4 for fast kinetics)
- *                              5 for run till abort (video)
+ * ARGUMENTS: [INT X_BIN,
+ *             INT Y_BIN,
+ *             INT X_MIN,
+ *             INT X_MAX,
+ *             INT Y_MIN,
+ *             INT Y_MAX]
  *
  * RETURNS: [STATUS CODE]
  *
- * DESCRIPTION: Sets the acquisition mode
+ * DESCRIPTION: Sets the binning and region of interest. x corresponds to
+ *              horizontal in the SDK and y corresponds to vertical in the 
+ *              SDK
  *
  */
 
@@ -26,26 +32,39 @@ void
 {
     
     /* Check for proper number of input and output arguments */
-    if (nrhs !=1) {
+    if (nrhs != 6) {
         mexErrMsgIdAndTxt( "Mscope:setAcqMode:invalidNumInputs",
                 "Wrong number of arguments");
     }
-    if (nlhs > 1) {
+    if (nlhs > 1 ) {
         mexErrMsgIdAndTxt( "Mscope:setAcqMode:maxlhs",
                 "Too many output arguments.");
     }
     
-    if (!isScalarArray(prhs[0])) {
-        mexErrMsgIdAndTxt( "Mscope:setAcqMode:invalidArg",
-                "Temperature is a scalar");
+    for (int inPrmNo = 0; inPrmNo < 6; inPrmNo ++) {
+        
+        if (!isScalarArray(prhs[inPrmNo])) {
+            mexErrMsgIdAndTxt( "Mscope:setAcqMode:invalidArg",
+                    "All arguments are integers");
+        }
     }
     
-    int acqMode = (int) mxGetScalar(prhs[0]);
-       
-    unsigned int ac = SetAcquisitionMode(acqMode); // set the mode
+    
+    int xhBin = (int) mxGetScalar(prhs[0]);
+    int yvBin = (int) mxGetScalar(prhs[1]);
+    
+    
+    int xhMin = (int) mxGetScalar(prhs[2]);
+    int xhMax = (int) mxGetScalar(prhs[3]);
+    
+    
+    int yvMin = (int) mxGetScalar(prhs[4]);
+    int yvMax = (int) mxGetScalar(prhs[5]);
+    
+    unsigned int ac = SetImage(xhBin,yvBin,xhMin,xhMax,yvMin,yvMax); 
     
     /* RETURNING A STATUS CODE */
-    UINT32_T andorCode32 = (UINT32_T) ac;     
+    UINT32_T andorCode32 = (UINT32_T) ac;
     
     // define an array of mwSignedIndex called dims (which is our output array dimensions)
     mwSignedIndex dims[2] = {1,1};

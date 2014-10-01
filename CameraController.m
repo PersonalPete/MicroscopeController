@@ -234,20 +234,6 @@ classdef CameraController < handle
             end % of if-else
         end % getMinRepeatTime
         
-        function delete(obj)
-            % closes the camera
-            % first, check if it is acquiring and cancel this
-            obj.assertConnected; % error if we aren't connected
-            obj.stopIfAcquiring;
-            obj.closeShutter; % close the shutter
-            % then close the camera
-            if closeCamera ~= obj.DRV_SUCCESS;
-                MException('Msccope:AndorErr','Cannot Close camera').throw;
-            end
-            obj.Connected = false; % we are now disconnected
-            fprintf('\nCamera disconnected...\n');
-        end % disconnect
-        
         function status = getStatus(obj)
             obj.assertConnected; % error if we aren't connected
             [err, response] = getStatus;
@@ -338,6 +324,33 @@ classdef CameraController < handle
             end
         end % get temp
         
+        function setGain(obj,gain)
+            % check that now is a good time
+            obj.assertConnected;
+            obj.assertIdle;
+            if setEMGain(round(gain)) ~= obj.DRV_SUCCESS
+                MException('MScope:AndorErr','Error Setting Gain').throw;
+            end
+        end
+        
+        function setCropBin(obj,xhBin,yvBin,xhMin,xhMax,yvMin,yvMax)
+            obj.assertConnected;
+            obj.assertIdle;
+            
+            if (xhMax <= xhMin || yvMax <= yvMin)
+                MException('MScope:InvalidParam','Region must be non-zero and positive').throw;
+            end
+            ac = setCropAndBin(xhBin,yvBin,xhMin,xhMax,yvMin,yvMax);
+            if ac ~= obj.DRV_SUCCESS
+                MException('MScope:AndorErr',...
+                    sprintf('Error %i setting crop and bin: %i, %i, %i, %i, %i, %i',...
+                        ac,xhBin,yvBin,xhMin,xhMax,yvMin,yvMax)).throw;
+            end
+            % set the appropriate number of pixels to request
+            obj.numXPix = floor((xhMax-xhMin+1)/xhBin);
+            obj.numYPix = floor((yvMax-yvMin+1)/yvBin);            
+        end
+        
         function setTemp(obj,temp)
             % check now is a good time to set the temperature
             obj.assertConnected;
@@ -361,6 +374,21 @@ classdef CameraController < handle
                 codeStr = 'ERR';
             end
         end
+        
+        % Destructor       
+        function delete(obj)
+            % closes the camera
+            % first, check if it is acquiring and cancel this
+            obj.assertConnected; % error if we aren't connected
+            obj.stopIfAcquiring;
+            obj.closeShutter; % close the shutter
+            % then close the camera
+            if closeCamera ~= obj.DRV_SUCCESS;
+                MException('Msccope:AndorErr','Cannot Close camera').throw;
+            end
+            obj.Connected = false; % we are now disconnected
+            fprintf('\nCamera disconnected...\n');
+        end % disconnect
             
     end % of public methods
     

@@ -1,11 +1,12 @@
-/* setAcqMode.cpp
+/* setEMGain.cpp
  *
- * ARGUMENTS: INT ACQ_MODE = 3 for kinetics (4 for fast kinetics)
+ * ARGUMENTS: INT EMGAIN = 3 for kinetics (4 for fast kinetics)
  *                              5 for run till abort (video)
  *
  * RETURNS: [STATUS CODE]
  *
- * DESCRIPTION: Sets the acquisition mode
+ * DESCRIPTION: Sets the gain. Function assumes gain is between 0 and 4095
+ *              i.e. SetEMGainMode(1) and that SetEMAdvanced(1) has been called
  *
  */
 
@@ -14,6 +15,7 @@
 #include <iostream> // for cout
 #include "atmcd32d.h" // Andor functions
 
+#define GAIN_MAX 2000 // in manual it says 4095 - but that is a mistake (at least for this camera)
 
 // convenience function
 bool isScalarArray(const mxArray* pArg) {
@@ -37,12 +39,22 @@ void
     
     if (!isScalarArray(prhs[0])) {
         mexErrMsgIdAndTxt( "Mscope:setAcqMode:invalidArg",
-                "Temperature is a scalar");
+                "Gain is an integer");
     }
     
-    int acqMode = (int) mxGetScalar(prhs[0]);
+    int gain = (int) mxGetScalar(prhs[0]);
        
-    unsigned int ac = SetAcquisitionMode(acqMode); // set the mode
+    // force the gain to be within our limits
+    if (gain < 0) {
+        gain = 0;   
+    }
+    
+    if (gain > GAIN_MAX) {
+        gain = GAIN_MAX;
+    }
+               
+    
+    unsigned int ac = SetEMCCDGain(gain); // no EM gain
     
     /* RETURNING A STATUS CODE */
     UINT32_T andorCode32 = (UINT32_T) ac;     
