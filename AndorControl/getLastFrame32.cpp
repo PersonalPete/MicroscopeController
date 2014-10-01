@@ -1,4 +1,4 @@
-/* getLastFrame16.cpp
+/* getLastFrame32.cpp
  * 
  * ARGUMENTS: INT XPIX, INT YPIX
  * 
@@ -51,7 +51,7 @@ mexFunction(int nlhs,mxArray *plhs[],int nrhs,const mxArray *prhs[])
     
     unsigned long numPix = xPix*yPix; // total number of pixels
     
-    WORD * imageArray = new WORD[numPix];
+    at_32 * imageArray = new at_32 [numPix];
     
     
     /* call the Andor SDK functions */ 
@@ -62,8 +62,8 @@ mexFunction(int nlhs,mxArray *plhs[],int nrhs,const mxArray *prhs[])
     // long validFirst, validLast; // Comment this out if not getting EXACT frame
     
     // IMPORTANT ONE FOR ACTUAL IMAGE RETRIEVAL        
-    UINT32_T returnInt = (UINT32_T) GetMostRecentImage16(imageArray,numPix);
-    // UINT32_T returnInt = (UINT32_T) GetImages16(last,last,imageArray,numPix,&validFirst,&validLast);
+     UINT32_T returnInt = (UINT32_T) GetMostRecentImage(imageArray,numPix);
+    // UINT32_T returnInt = (UINT32_T) GetImages(last,last,imageArray,numPix,&validFirst,&validLast);
 
     
     /* Copy the memory into MATLAB form */
@@ -76,7 +76,7 @@ mexFunction(int nlhs,mxArray *plhs[],int nrhs,const mxArray *prhs[])
     
     mwSignedIndex imageDims[2] = {xPix,yPix}; // elements in image
     
-    plhs[1] = mxCreateNumericArray(2, imageDims, mxUINT16_CLASS, mxREAL);
+    plhs[1] = mxCreateNumericArray(2, imageDims, mxUINT32_CLASS, mxREAL);
     double * imgPtr = mxGetPr(plhs[1]);
     memcpy(imgPtr, imageArray, numPix*sizeof(imageArray[0]));
     

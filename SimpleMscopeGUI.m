@@ -1349,62 +1349,62 @@ classdef SimpleMscopeGUI < handle
                 fprintf('\nIdle Timer Error: \n %s\n',exception.getReport);
             end
         end % updateIdle
- 
+        
         %% updater for acq timer
-         function updateAcq(obj)
-             try
-                 obj.updateStat; % always update the status
-                 set(obj.SinglePlotAxisH,'CLim',obj.ImageLimits); % update the image scaling
-                 
-                 statusNow = obj.CamCon.getStringStatus;
-                 if strcmp(statusNow,'ACQUIRE')
-                     % update the frame rate and temperature indicators
-                     obj.updateTemp;
-                     obj.updateFrameRate;
-                     
-                     % update the displayed image
-                     [codeStr, imageData, latestNo] = obj.CamCon.getLatestData;
-                     if strcmp(codeStr,'OK')
-                         set(obj.SingleImageH,'CData',imageData);
-                         obj.LatestImageData = imageData;
-                         % scale the image
-                         set(obj.FrAcqH,'String',sprintf('%i',latestNo),'BackgroundColor',obj.COLOR_STAT_WARN);
-                     end
-                     
-                     % what happens if the ACQ timer realises the acquistion has stopped
-                 elseif strcmp(statusNow,'IDLE') && obj.AllowedToStop
-                     % make sure the start acquisition buttons are both
-                     % available
-                     obj.setGraphicsAcquiring(0);
-                     
-                     set(obj.StartVideoH,'enable','on','value',0);
-                     set(obj.StartCaptH,'enable','on','value',0);
-                     set(obj.StopCaptH,'enable','off','value',1,'ForegroundColor',obj.COLOR_STOP_TEXT);
-                     
-                     drawnow; % so that it looks like we will be able to change modes
-                     
-                     % if in ALEX then stop the lasers after the camera
-                     % stops too
-                     if obj.AlexMode
-                         obj.LaserCon.stopSignal
-                         obj.GreenState = 0;
-                         obj.RedState = 0;
-                         obj.NIRState = 0;
-                         % set the buttons to reflect this
-                         set([obj.GreenOnH, obj.RedOnH, obj.NIROnH],'Value',0,'Enable','on');
-                     end
-                     
-                     % set the state, which makes sure the above can run
-                     obj.State = 0; % i.e. idle
-                     
-                     % stop this timer, and start the idle state timer
-                     stop(obj.TimerAcq);
-                     start(obj.TimerIdle);
-                 end
-             catch exception
-                 fprintf('\nAcq Timer Error: \n %s\n',exception.getReport);
-             end
-         end
+        function updateAcq(obj)
+            try
+                obj.updateStat; % always update the status
+                set(obj.SinglePlotAxisH,'CLim',obj.ImageLimits); % update the image scaling
+                
+                statusNow = obj.CamCon.getStringStatus;
+                if strcmp(statusNow,'ACQUIRE')
+                    % update the frame rate and temperature indicators
+                    obj.updateTemp;
+                    obj.updateFrameRate;
+                    
+                    % update the displayed image
+                    [codeStr, imageData, latestNo] = obj.CamCon.getLatestData;
+                    if strcmp(codeStr,'OK')
+                        set(obj.SingleImageH,'CData',imageData);
+                        obj.LatestImageData = imageData;
+                        % scale the image
+                        set(obj.FrAcqH,'String',sprintf('%i',latestNo),'BackgroundColor',obj.COLOR_STAT_WARN);
+                    end
+                    
+                    % what happens if the ACQ timer realises the acquistion has stopped
+                elseif strcmp(statusNow,'IDLE') && obj.AllowedToStop
+                    % make sure the start acquisition buttons are both
+                    % available
+                    obj.setGraphicsAcquiring(0);
+                    
+                    set(obj.StartVideoH,'enable','on','value',0);
+                    set(obj.StartCaptH,'enable','on','value',0);
+                    set(obj.StopCaptH,'enable','off','value',1,'ForegroundColor',obj.COLOR_STOP_TEXT);
+                    
+                    drawnow; % so that it looks like we will be able to change modes
+                    
+                    % if in ALEX then stop the lasers after the camera
+                    % stops too
+                    if obj.AlexMode
+                        obj.LaserCon.stopSignal
+                        obj.GreenState = 0;
+                        obj.RedState = 0;
+                        obj.NIRState = 0;
+                        % set the buttons to reflect this
+                        set([obj.GreenOnH, obj.RedOnH, obj.NIROnH],'Value',0,'Enable','on');
+                    end
+                    
+                    % set the state, which makes sure the above can run
+                    obj.State = 0; % i.e. idle
+                    
+                    % stop this timer, and start the idle state timer
+                    stop(obj.TimerAcq);
+                    start(obj.TimerIdle);
+                end
+            catch exception
+                fprintf('\nAcq Timer Error: \n %s\n',exception.getReport);
+            end
+        end
         
         %% other updaters
         
@@ -2001,7 +2001,7 @@ classdef SimpleMscopeGUI < handle
                 set(obj.SetTempH,'String',sprintf('%i',obj.CamSetTemp));
             end
         end
-            
+        
         %% ACQUISITION START STOP CALLBACKS
         % start without spooling
         function startVideo(obj,src,~)
@@ -2019,7 +2019,7 @@ classdef SimpleMscopeGUI < handle
             if get(obj.StartCaptH,'Value') == 1, return; end % don't do anything if startcapt has been hit too
             set(obj.StartCaptH,'enable','inactive');
             set(src,'enable','off');
-
+            
             % make the controls that can't be used during acquisition
             % greyed out
             obj.setGraphicsAcquiring(1);

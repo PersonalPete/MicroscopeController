@@ -367,7 +367,7 @@ classdef CameraController < handle
              % retrieves the latest image taken by the camera and an
              % approximate number of total images acquired since start was
              % called
-             [code, imageArray, mostRecentImNo] = getLastFrame16(obj.numXPix,obj.numYPix);
+             [code, imageArray, mostRecentImNo] = getLastFrame32(obj.numXPix,obj.numYPix);
              if code == obj.DRV_SUCCESS
                  codeStr = 'OK';
              else
