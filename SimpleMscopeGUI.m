@@ -64,7 +64,7 @@ classdef SimpleMscopeGUI < handle
         SetGainH;
         
         EMGain = 0; % the default is 0 (from the mex camera initial settings called when CameraController instantiated)
-
+        
         SetBinH;
         BinStringH;
         
@@ -85,9 +85,14 @@ classdef SimpleMscopeGUI < handle
         YvMin = 1;
         YvMax = 512;
         
+        SetTempH;
+        TempCtrlStringH;
+        
+        CamSetTemp = -60; % default target temperature specified in initialSettings.cpp
+        
         %% Main figure ui handles
         MainFigH;
-      
+        
         %% STATUS
         
         CamStatH;
@@ -202,7 +207,7 @@ classdef SimpleMscopeGUI < handle
         GreenBusy = 0; % whether the particular laser is involved in the ALEX we are doing
         RedBusy = 0;
         NIRBusy = 0;
-          
+        
         % CONSTANTS
         AUTO_FACTOR = 2; % auto scales between the minimum and AUTO_FACTOR*(mean(data - min)) + min
         
@@ -1046,14 +1051,14 @@ classdef SimpleMscopeGUI < handle
                     'Renderer','OpenGL',...
                     'Toolbar','none',...
                     'MenuBar','none',...
-                    'Visible','off');  
+                    'Visible','off');
                 
                 % gain
                 obj.GainStringH = uicontrol('Parent',obj.AdvFigH,...
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.05, 0.8, 0.45, 0.07],...
+                    'Position',[0.00, 0.85, 0.45, 0.07],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -1067,7 +1072,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','edit',...
                     'BackgroundColor',obj.COLOR_INPUT_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.55, 0.8, 0.40, 0.10],...
+                    'Position',[0.50, 0.85, 0.40, 0.10],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.5,...
@@ -1084,7 +1089,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.05, 0.6, 0.45, 0.07],...
+                    'Position',[0.00, 0.65, 0.45, 0.07],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -1093,12 +1098,12 @@ classdef SimpleMscopeGUI < handle
                     'String','Binning (n x n) n =',...
                     'Visible','on');
                 
-                 obj.SetBinH = uicontrol('Parent',obj.AdvFigH,...
+                obj.SetBinH = uicontrol('Parent',obj.AdvFigH,...
                     'Callback',@obj.setCropBin,...
                     'Style','edit',...
                     'BackgroundColor',obj.COLOR_INPUT_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.55, 0.6, 0.40, 0.10],...
+                    'Position',[0.50, 0.65, 0.40, 0.10],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.5,...
@@ -1107,11 +1112,11 @@ classdef SimpleMscopeGUI < handle
                     'String',sprintf('%i',obj.Binning),...
                     'Visible','on');
                 
-                 obj.XCropStringH = uicontrol('Parent',obj.AdvFigH,...
+                obj.XCropStringH = uicontrol('Parent',obj.AdvFigH,...
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.05, 0.4, 0.45, 0.07],...
+                    'Position',[0.00, 0.45, 0.45, 0.07],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -1120,12 +1125,12 @@ classdef SimpleMscopeGUI < handle
                     'String','X Pixels:',...
                     'Visible','on');
                 
-                 obj.SetXMinH = uicontrol('Parent',obj.AdvFigH,...
+                obj.SetXMinH = uicontrol('Parent',obj.AdvFigH,...
                     'Callback',@obj.setCropBin,...
                     'Style','edit',...
                     'BackgroundColor',obj.COLOR_INPUT_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.55, 0.4, 0.175, 0.10],...
+                    'Position',[0.50, 0.45, 0.175, 0.10],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.5,...
@@ -1134,12 +1139,12 @@ classdef SimpleMscopeGUI < handle
                     'String',sprintf('%i',obj.XhMin),...
                     'Visible','on');
                 
-                 obj.SetXMaxH = uicontrol('Parent',obj.AdvFigH,...
+                obj.SetXMaxH = uicontrol('Parent',obj.AdvFigH,...
                     'Callback',@obj.setCropBin,...
                     'Style','edit',...
                     'BackgroundColor',obj.COLOR_INPUT_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.775, 0.4, 0.175, 0.10],...
+                    'Position',[0.725, 0.45, 0.175, 0.10],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.5,...
@@ -1148,11 +1153,11 @@ classdef SimpleMscopeGUI < handle
                     'String',sprintf('%i',obj.XhMax),...
                     'Visible','on');
                 
-                 obj.YCropStringH = uicontrol('Parent',obj.AdvFigH,...
+                obj.YCropStringH = uicontrol('Parent',obj.AdvFigH,...
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_INFO_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.05, 0.2, 0.45, 0.07],...
+                    'Position',[0.00, 0.25, 0.45, 0.07],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
                     'FontSize',0.4,...
@@ -1161,12 +1166,12 @@ classdef SimpleMscopeGUI < handle
                     'String','Y Pixels:',...
                     'Visible','on');
                 
-                 obj.SetYMinH = uicontrol('Parent',obj.AdvFigH,...
+                obj.SetYMinH = uicontrol('Parent',obj.AdvFigH,...
                     'Callback',@obj.setCropBin,...
                     'Style','edit',...
                     'BackgroundColor',obj.COLOR_INPUT_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.55, 0.2, 0.175, 0.10],...
+                    'Position',[0.50, 0.25, 0.175, 0.10],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.5,...
@@ -1175,12 +1180,12 @@ classdef SimpleMscopeGUI < handle
                     'String',sprintf('%i',obj.YvMin),...
                     'Visible','on');
                 
-                 obj.SetYMaxH = uicontrol('Parent',obj.AdvFigH,...
+                obj.SetYMaxH = uicontrol('Parent',obj.AdvFigH,...
                     'Callback',@obj.setCropBin,...
                     'Style','edit',...
                     'BackgroundColor',obj.COLOR_INPUT_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.775, 0.2, 0.175, 0.10],...
+                    'Position',[0.725, 0.25, 0.175, 0.10],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.5,...
@@ -1189,8 +1194,38 @@ classdef SimpleMscopeGUI < handle
                     'String',sprintf('%i',obj.YvMax),...
                     'Visible','on');
                 
-            catch exception
+                % Temperature control
+                obj.TempCtrlStringH = uicontrol('Parent',obj.AdvFigH,...
+                    'Style','text',...
+                    'BackgroundColor',obj.COLOR_INFO_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.00, 0.05, 0.45, 0.07],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INFO,...
+                    'FontSize',0.4,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_INFO_TEXT,...
+                    'String',sprintf('Camera Temp (%cC):',char(176)),...
+                    'Visible','on');
                 
+                
+                obj.SetTempH = uicontrol('Parent',obj.AdvFigH,...
+                    'Callback',@obj.setTemp,...
+                    'Style','edit',...
+                    'BackgroundColor',obj.COLOR_INPUT_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.50, 0.05, 0.40, 0.10],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.5,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_INPUT_TEXT,...
+                    'String',sprintf('%i',obj.CamSetTemp),...
+                    'Visible','on');
+                
+                
+            catch exception
+                %% EXCEPTION HANDLING DURING INITIALISATION
                 try
                     stop(obj.TimerIdle);
                 catch
@@ -1283,10 +1318,10 @@ classdef SimpleMscopeGUI < handle
             % smoothness)
             runCount = get(obj.TimerPosition,'TasksExecuted');
             
-            switch mod(runCount,3)                
-            % get the real position of the stages and update the displays
+            switch mod(runCount,3)
+                % get the real position of the stages and update the displays
                 case 0
-                    set(obj.LeftRightDisplayH,'string',sprintf('%.5f',-obj.SwapLR*obj.StageCon.getPosition(obj.LeftRightStage)));           
+                    set(obj.LeftRightDisplayH,'string',sprintf('%.5f',-obj.SwapLR*obj.StageCon.getPosition(obj.LeftRightStage)));
                 case 1
                     set(obj.UpDownDisplayH,'string',sprintf('%.5f',obj.SwapUD*obj.StageCon.getPosition(obj.UpDownStage)));
                 case 2
@@ -1314,73 +1349,73 @@ classdef SimpleMscopeGUI < handle
                 fprintf('\nIdle Timer Error: \n %s\n',exception.getReport);
             end
         end % updateIdle
-        
+ 
         %% updater for acq timer
-        function updateAcq(obj)
-            try
-                obj.updateStat; % always update the status
-                set(obj.SinglePlotAxisH,'CLim',obj.ImageLimits); % update the image scaling
-                
-                statusNow = obj.CamCon.getStringStatus;
-                if strcmp(statusNow,'ACQUIRE')
-                    % update the frame rate and temperature indicators
-                    obj.updateTemp;
-                    obj.updateFrameRate;
-                    
-                    % update the displayed image
-                    [codeStr, imageData, latestNo] = obj.CamCon.getLatestData;
-                    if strcmp(codeStr,'OK')
-                        set(obj.SingleImageH,'CData',imageData);
-                        obj.LatestImageData = imageData;
-                        % scale the image
-                        set(obj.FrAcqH,'String',sprintf('%i',latestNo),'BackgroundColor',obj.COLOR_STAT_WARN);
-                    end
-                    
-                    % what happens if the ACQ timer realises the acquistion has stopped
-                elseif strcmp(statusNow,'IDLE') && obj.AllowedToStop
-                    % make sure the start acquisition buttons are both
-                    % available
-                    obj.setGraphicsAcquiring(0);
-                    
-                    set(obj.StartVideoH,'enable','on','value',0);
-                    set(obj.StartCaptH,'enable','on','value',0);
-                    set(obj.StopCaptH,'enable','off','value',1,'ForegroundColor',obj.COLOR_STOP_TEXT);
-                    
-                    drawnow; % so that it looks like we will be able to change modes
-                    
-                    % if in ALEX then stop the lasers after the camera
-                    % stops too
-                    if obj.AlexMode
-                        obj.LaserCon.stopSignal
-                        obj.GreenState = 0;
-                        obj.RedState = 0;
-                        obj.NIRState = 0;
-                        % set the buttons to reflect this
-                        set([obj.GreenOnH, obj.RedOnH, obj.NIROnH],'Value',0,'Enable','on');
-                    end
-                    
-                    % set the state, which makes sure the above can run
-                    obj.State = 0; % i.e. idle
-                    
-                    % stop this timer, and start the idle state timer
-                    stop(obj.TimerAcq);
-                    start(obj.TimerIdle);
-                end
-            catch exception
-                fprintf('\nAcq Timer Error: \n %s\n',exception.getReport);
-            end
-        end
+         function updateAcq(obj)
+             try
+                 obj.updateStat; % always update the status
+                 set(obj.SinglePlotAxisH,'CLim',obj.ImageLimits); % update the image scaling
+                 
+                 statusNow = obj.CamCon.getStringStatus;
+                 if strcmp(statusNow,'ACQUIRE')
+                     % update the frame rate and temperature indicators
+                     obj.updateTemp;
+                     obj.updateFrameRate;
+                     
+                     % update the displayed image
+                     [codeStr, imageData, latestNo] = obj.CamCon.getLatestData;
+                     if strcmp(codeStr,'OK')
+                         set(obj.SingleImageH,'CData',imageData);
+                         obj.LatestImageData = imageData;
+                         % scale the image
+                         set(obj.FrAcqH,'String',sprintf('%i',latestNo),'BackgroundColor',obj.COLOR_STAT_WARN);
+                     end
+                     
+                     % what happens if the ACQ timer realises the acquistion has stopped
+                 elseif strcmp(statusNow,'IDLE') && obj.AllowedToStop
+                     % make sure the start acquisition buttons are both
+                     % available
+                     obj.setGraphicsAcquiring(0);
+                     
+                     set(obj.StartVideoH,'enable','on','value',0);
+                     set(obj.StartCaptH,'enable','on','value',0);
+                     set(obj.StopCaptH,'enable','off','value',1,'ForegroundColor',obj.COLOR_STOP_TEXT);
+                     
+                     drawnow; % so that it looks like we will be able to change modes
+                     
+                     % if in ALEX then stop the lasers after the camera
+                     % stops too
+                     if obj.AlexMode
+                         obj.LaserCon.stopSignal
+                         obj.GreenState = 0;
+                         obj.RedState = 0;
+                         obj.NIRState = 0;
+                         % set the buttons to reflect this
+                         set([obj.GreenOnH, obj.RedOnH, obj.NIROnH],'Value',0,'Enable','on');
+                     end
+                     
+                     % set the state, which makes sure the above can run
+                     obj.State = 0; % i.e. idle
+                     
+                     % stop this timer, and start the idle state timer
+                     stop(obj.TimerAcq);
+                     start(obj.TimerIdle);
+                 end
+             catch exception
+                 fprintf('\nAcq Timer Error: \n %s\n',exception.getReport);
+             end
+         end
         
         %% other updaters
         
         function updatePowerMeterReading(obj)
             % call this to update the power meter reading (on a timer)
             try
-            if obj.State == 0;
-                set(obj.PowerMeterReadH,'String',sprintf('%.1f mW',1000*obj.PowerMeterCon.measurePower(obj.PowerMeterWave)));
-            else
-                set(obj.PowerMeterReadH,'String','-');
-            end
+                if obj.State == 0;
+                    set(obj.PowerMeterReadH,'String',sprintf('%.1f mW',1000*obj.PowerMeterCon.measurePower(obj.PowerMeterWave)));
+                else
+                    set(obj.PowerMeterReadH,'String','-');
+                end
             catch exception
                 fprintf('\nPower Meter Timer Error\n %s\n',exception.getReport);
             end
@@ -1883,10 +1918,10 @@ classdef SimpleMscopeGUI < handle
             % Set the cropping and binning on the camera. There is a
             % minimum number of pixels which must be present in the rows
             % and columns of the sub image (I think this is 3), and the ROI
-            % specified must exactly match the binning requested            
+            % specified must exactly match the binning requested
             
             function validVal = nForceValidInt(inObj,min,max,originalVal,roundNearest)
-                % convenience function for makings sure inputs are valid                
+                % convenience function for makings sure inputs are valid
                 inputVal = str2double(get(inObj,'String'));
                 if isnan(inputVal)
                     validVal = originalVal;
@@ -1905,33 +1940,66 @@ classdef SimpleMscopeGUI < handle
                 set(inObj,'String',sprintf('%i',validVal));
             end
             
-            obj.Binning = nForceValidInt(obj.SetBinH,1,obj.MAX_BIN,obj.Binning);
-            obj.XhMin = nForceValidInt(obj.SetXMinH,1,obj.MAX_XYPIX-3*obj.Binning,obj.XhMin);
-            obj.XhMax = nForceValidInt(obj.SetXMaxH,obj.XhMin + 3*obj.Binning,obj.MAX_XYPIX,obj.XhMax,obj.Binning);
-            obj.YvMin = nForceValidInt(obj.SetYMinH,1,obj.MAX_XYPIX-3*obj.Binning,obj.YvMin);
-            obj.YvMax = nForceValidInt(obj.SetYMaxH,obj.YvMin + 3*obj.Binning,obj.MAX_XYPIX,obj.YvMax,obj.Binning);
-            
-            if obj.XhMin > obj.XhMax
-                % minimum region is three pixels, counting is inclusive
-                obj.XhMin = obj.XhMax - 3*obj.Binning + 1;
-                set(obj.SetXMinH,'String',obj.XhMin);
+            % if the camera isn't idle, then ignore the input
+            if (obj.State ~= 0 || ~strcmp(obj.CamCon.getStringStatus,'IDLE'))% not idle
+                set(obj.SetBinH,'string',sprintf('%i',obj.Binning));
+                set(obj.SetXMinH,'string',sprintf('%i',obj.XhMin));
+                set(obj.SetXMaxH,'string',sprintf('%i',obj.XhMax));
+                set(obj.SetYMinH,'string',sprintf('%i',obj.YvMin));
+                set(obj.SetYMaxH,'string',sprintf('%i',obj.YvMax));
+            else
+                
+                obj.Binning = nForceValidInt(obj.SetBinH,1,obj.MAX_BIN,obj.Binning);
+                obj.XhMin = nForceValidInt(obj.SetXMinH,1,obj.MAX_XYPIX-3*obj.Binning,obj.XhMin);
+                obj.XhMax = nForceValidInt(obj.SetXMaxH,obj.XhMin + 3*obj.Binning,obj.MAX_XYPIX,obj.XhMax,obj.Binning);
+                obj.YvMin = nForceValidInt(obj.SetYMinH,1,obj.MAX_XYPIX-3*obj.Binning,obj.YvMin);
+                obj.YvMax = nForceValidInt(obj.SetYMaxH,obj.YvMin + 3*obj.Binning,obj.MAX_XYPIX,obj.YvMax,obj.Binning);
+                
+                if obj.XhMin > obj.XhMax
+                    % minimum region is three pixels, counting is inclusive
+                    obj.XhMin = obj.XhMax - 3*obj.Binning + 1;
+                    set(obj.SetXMinH,'String',obj.XhMin);
+                end
+                
+                if obj.YvMin > obj.YvMax
+                    obj.YvMin = obj.YvMax - 3*obj.Binning + 1;
+                    set(obj.SetYMinH,'String',obj.YvMin);
+                end
+                
+                obj.CamCon.setCropBin(obj.Binning,obj.Binning,obj.XhMin,obj.XhMax,obj.YvMin,obj.YvMax);
+                
+                %% TODO - when allowing for image rotation, we may have to swap
+                % N.B these are swapped since the camera's xh pixels are our yv
+                % pixels on screen etc...
+                obj.NumDispYPix = (obj.XhMax - obj.XhMin + 1)/obj.Binning;
+                obj.NumDispXPix = (obj.YvMax - obj.YvMin + 1)/obj.Binning;
+                
+                % the 'Xlim' and 'Ylim' arguments
+                set(obj.SinglePlotAxisH,'Xlim',[0 obj.NumDispXPix],'Ylim',[0 obj.NumDispYPix]);
             end
-            
-            if obj.YvMin > obj.YvMax
-                obj.YvMin = obj.YvMax - 3*obj.Binning + 1;
-                set(obj.SetYMinH,'String',obj.YvMin);
+        end
+        
+        function setTemp(obj,src,~)
+            % if the camera isn't idle, then ignore the input
+            if (obj.State ~= 0 || ~strcmp(obj.CamCon.getStringStatus,'IDLE'))% not idle
+                set(obj.SetTempH,'String',sprintf('%i',obj.CamSetTemp));
+            else
+                % get the input string
+                inputTemp = str2double(get(src,'String'));
+                if isnan(inputTemp) % check it is a number
+                    inputTemp = obj.CamSetTemp;
+                elseif inputTemp > obj.CamCon.TEMP_MAX % check it is in valid range
+                    inputTemp = obj.CamCon.TEMP_MAX;
+                elseif inputTemp < obj.CamCon.TEMP_MIN
+                    inputTemp = obj.CamCon.TEMP_MIN;
+                end
+                % set the camera temperature
+                obj.CamCon.setTemp(round(inputTemp));
+                % set the stored target temperature
+                obj.CamSetTemp = round(inputTemp);
+                % make sure the display matches the target (i.e. rounding)
+                set(obj.SetTempH,'String',sprintf('%i',obj.CamSetTemp));
             end
-            
-            obj.CamCon.setCropBin(obj.Binning,obj.Binning,obj.XhMin,obj.XhMax,obj.YvMin,obj.YvMax);
-            
-            %% TODO - when allowing for image rotation, we may have to swap
-            % N.B these are swapped since the camera's xh pixels are our yv
-            % pixels on screen etc...
-            obj.NumDispYPix = (obj.XhMax - obj.XhMin + 1)/obj.Binning;
-            obj.NumDispXPix = (obj.YvMax - obj.YvMin + 1)/obj.Binning;
-                       
-            % the 'Xlim' and 'Ylim' arguments
-            set(obj.SinglePlotAxisH,'Xlim',[0 obj.NumDispXPix],'Ylim',[0 obj.NumDispYPix]);            
         end
             
         %% ACQUISITION START STOP CALLBACKS
@@ -1951,7 +2019,7 @@ classdef SimpleMscopeGUI < handle
             if get(obj.StartCaptH,'Value') == 1, return; end % don't do anything if startcapt has been hit too
             set(obj.StartCaptH,'enable','inactive');
             set(src,'enable','off');
-            
+
             % make the controls that can't be used during acquisition
             % greyed out
             obj.setGraphicsAcquiring(1);
@@ -2018,6 +2086,7 @@ classdef SimpleMscopeGUI < handle
             % make the controls that can't be used during acquisition
             % unavailable
             obj.setGraphicsAcquiring(1);
+            
             set(src,'enable','off','value',1);
             set(obj.StartVideoH,'enable','off','value',0);
             % turn spooling on

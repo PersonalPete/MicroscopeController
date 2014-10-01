@@ -364,17 +364,17 @@ classdef CameraController < handle
         end % setTemp
         
         function [codeStr, imageArray, mostRecentImNo] = getLatestData(obj)
-            % retrieves the latest image taken by the camera and an
-            % approximate number of total images acquired since start was
-            % called
-            [code, imageArray, mostRecentImNo] = getLastFrame16(obj.numXPix,obj.numYPix);
-            if code == obj.DRV_SUCCESS
-                codeStr = 'OK';
-            else
-                codeStr = 'ERR';
-            end
+             % retrieves the latest image taken by the camera and an
+             % approximate number of total images acquired since start was
+             % called
+             [code, imageArray, mostRecentImNo] = getLastFrame16(obj.numXPix,obj.numYPix);
+             if code == obj.DRV_SUCCESS
+                 codeStr = 'OK';
+             else
+                 codeStr = 'ERR';
+             end
         end
-        
+                      
         % Destructor       
         function delete(obj)
             % closes the camera
