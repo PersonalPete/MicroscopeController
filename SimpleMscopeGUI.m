@@ -10,7 +10,7 @@ classdef SimpleMscopeGUI < handle
         % Thorlabs application 'PM100-200 Utility' at the start
         
         %
-        RedPort = 'TEST'; % 'COM5';
+        RedPort = 'COM6'; % 'TEST';
         PosButtonStep = -2; % 10^-PosButtonStep (in mm) (Default - can be changed by user with slider)
         SwapLR = +1; % choose -1 or 1 to change left right behaviour
         SwapUD = 1; % choose -1 or 1 to change up down
@@ -884,7 +884,8 @@ classdef SimpleMscopeGUI < handle
                     'Style','slider',...
                     'Min',0,...
                     'Max',obj.MAX_DATA-2,...
-                    'SliderStep',[0.01 0.1],... % minor and major steps
+                    'Value',0,...
+                    'SliderStep',(1/obj.MAX_DATA).*[10 1000],... % minor and major steps
                     'BackgroundColor',obj.COLOR_INPUT_BGD,...
                     'Units','Normalized',...
                     'Position',[0.30 0.025 0.2 0.025],...
@@ -894,15 +895,16 @@ classdef SimpleMscopeGUI < handle
                 
                 obj.RangeH = uicontrol('Parent',obj.MainFigH,...
                     'Style','slider',...
-                    'Min',0,...
-                    'Max',1,... % only zero and one because we are taking the range as the fraction of the remaining data values to not truncate
-                    'SliderStep',[1e-3 0.1],... % minor and major steps
+                    'Min',1,...
+                    'Max',obj.MAX_DATA,... % only zero and one because we are taking the range as the fraction of the remaining data values to not truncate
+                    'Value',1,...    
+                    'SliderStep',(1/obj.MAX_DATA).*[10 1000],... % minor and major steps
                     'BackgroundColor',obj.COLOR_INPUT_BGD,...
                     'ForegroundColor',[0 0 0],...
                     'Units','Normalized',...
                     'Position',[0.50 0.025 0.2 0.025],...
                     'callback',@obj.setRangeImage,...
-                    'TooltipString','Display range',...
+                    'TooltipString','Display maximum',...
                     'Visible','on');
                 
                 obj.AutoH = uicontrol('Parent',obj.MainFigH,...
@@ -1828,18 +1830,15 @@ classdef SimpleMscopeGUI < handle
         
         function setMinImage(obj,src,~)
             newMin = get(src,'Value');
-            
-            newRange = get(src,'Value');
-            newMax = obj.ImageLimits(1) + newRange*(obj.MAX_DATA-obj.ImageLimits(1));
-            
-            newMax = max(newMax,newMin + 1);
+            newMax = max(obj.ImageLimits(2),newMin + 1);
             obj.ImageLimits = [newMin newMax];
         end
         
         function setRangeImage(obj,src,~)
-            newRange = get(src,'Value');
-            newMax = obj.ImageLimits(1) + newRange*(obj.MAX_DATA-obj.ImageLimits(1));
-            newMax = max(newMax,obj.ImageLimits(1) + 1);
+%             newRange = get(src,'Value')
+%             newMax = obj.ImageLimits(1) + newRange*(obj.MAX_DATA-obj.ImageLimits(1));
+%             newMax = max(newMax,obj.ImageLimits(1) + 1);
+            newMax = max(get(src,'Value'),obj.ImageLimits(1)+1);
             obj.ImageLimits(2) = newMax;
         end
         
@@ -1850,11 +1849,13 @@ classdef SimpleMscopeGUI < handle
             newMax = obj.AUTO_FACTOR*( mean(mostRecentImage(:)-newMin) ) + newMin + 1;
             newCLim = [newMin, newMax];
             
+%             set(obj.MinH,'Value',newMin);
+%             valueToSet = (newMax-newMin)/(obj.MAX_DATA-newMin)
+%             set(obj.RangeH,'Value',valueToSet); % as a fraction of possible range
+            
+            set(obj.RangeH,'Value',newMax);
             set(obj.MinH,'Value',newMin);
-            set(obj.RangeH,'Value',(newMax-newMin)/(obj.MAX_DATA-newMin)); % as a fraction of possible range
-            
-            obj.ImageLimits = newCLim;
-            
+            obj.ImageLimits = newCLim;            
             set(obj.SinglePlotAxisH,'CLim',newCLim);
         end
         

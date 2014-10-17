@@ -66,6 +66,8 @@ classdef CameraController < handle
             obj.setAcqMode(0);
             % Default to NOT SPOOLING
             obj.setSpool(); % don't spool
+            % Default the shutter open
+            obj.openShutter; 
             
             obj.Connected = true; % we are connected
             
