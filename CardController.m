@@ -167,7 +167,7 @@ classdef CardController < handle
                         obj.NIRVi.Abort;
                         obj.NIRBusy = false;
                     end
-                    alexViToRun = 'TrALEX_RNG.vi';
+                    alexViToRun = 'TrALEX_GRN.vi';
                     freq = 1/(frameTime*3); % since it is three color
                 case 3 % GN
                     if obj.GreenBusy
@@ -178,7 +178,7 @@ classdef CardController < handle
                         obj.NIRVi.Abort;
                         obj.NIRBusy = false;
                     end
-                    alexViToRun = 'DuALEX_NG.vi';
+                    alexViToRun = 'DuALEX_GN.vi';
                     freq = 1/(frameTime*2); % since it is two color
                 case 4 % RN
                     if obj.NIRBusy

@@ -1414,7 +1414,7 @@ classdef SimpleMscopeGUI < handle
             % call this to update the power meter reading (on a timer)
             try
                 if obj.State == 0;
-                    set(obj.PowerMeterReadH,'String',sprintf('%.1f mW',1000*obj.PowerMeterCon.measurePower(obj.PowerMeterWave)));
+                    set(obj.PowerMeterReadH,'String',sprintf('%.2f mW',1000*obj.PowerMeterCon.measurePower(obj.PowerMeterWave)));
                 else
                     set(obj.PowerMeterReadH,'String','-');
                 end
