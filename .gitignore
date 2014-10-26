@@ -1,9 +1,9 @@
-\AndorControl\ATMCD32D.H
-\AndorControl\atmcd64d.dll
-\AndorControl\atmcd64m.lib
+/AndorControl/ATMCD32D.H
+/AndorControl/atmcd64d.dll
+/AndorControl/atmcd64m.lib
 
-\Example Captures\
+/Example Captures/
 
-PIControl\PI_GCS2_DLL.h
-PIControl\PI_GCS2_DLL_x64.dll
-PIControl\PI_GCS2_DLL_x64.lib
+/PIControl/PI_GCS2_DLL.h
+/PIControl/PI_GCS2_DLL_x64.dll
+/PIControl/PI_GCS2_DLL_x64.lib
