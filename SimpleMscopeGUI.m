@@ -38,7 +38,7 @@ classdef SimpleMscopeGUI < handle
         TIMER_IDLE_PERIOD = 0.2; % (\s between updating displayed info)
         TIMER_ACQ_PERIOD = 0.033; % update at 30 Hz in this mode (maximum)
         TIMER_POS_PERIOD = 0.2; % for querying the position (maybe this is too fast)
-        TIMER_POW_PERIOD = 2.2; % slow because it can't read much faster (in single read mode)
+        TIMER_POW_PERIOD = 0.2; % slow because it can't read much faster (in single read mode)
         
         % camera controller object
         CamCon;
@@ -1586,7 +1586,7 @@ classdef SimpleMscopeGUI < handle
             % call this to update the power meter reading (on a timer)
             try
                 if obj.State == 0;
-                    set(obj.PowerMeterReadH,'String',sprintf('%.2f mW',1000*obj.PowerMeterCon.measurePower(obj.PowerMeterWave)));
+                    set(obj.PowerMeterReadH,'String',sprintf('%.3f mW',1000*obj.PowerMeterCon.measurePower(obj.PowerMeterWave)));
                 else
                     set(obj.PowerMeterReadH,'String','-');
                 end

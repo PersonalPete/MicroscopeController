@@ -2,8 +2,12 @@ classdef PM100USBController < handle
     properties (SetAccess = private)
         VisaConnection;
         LastRead = NaN;
-        READ_DELAY = 1; % read no faster than every 1 seconds
+        READ_DELAY = 0.2; % read no faster than every 1 seconds
         LastPower = NaN;
+        LastWave = NaN;
+        
+        CAL_FACTOR = 4.72; % because there is a roughly 70:30 beamsplitter directing light onto the powermeter
+        
     end
     methods (Access = public)
         function obj = PM100USBController()
@@ -20,11 +24,15 @@ classdef PM100USBController < handle
         end
         function power = measurePower(obj,wavelength)
             warning('off','instrument:fgetl:unsuccessfulRead');
+            wavelength = round(wavelength); % must be a whole number
             % enforce the waiting before taking a new reading
             if isnan(obj.LastRead) || toc(obj.LastRead) > obj.READ_DELAY
                 obj.LastRead = tic;
                 % set the wavelength
-                fprintf(obj.VisaConnection,'CORR:WAV %i',round(wavelength));
+                if obj.LastWave ~= wavelength
+                    fprintf(obj.VisaConnection,'CORR:WAV %i',wavelength);
+                    obj.LastWave = wavelength;
+                end
                 % take the measurement
                 fprintf(obj.VisaConnection,'INIT');
                 % request the answer (in W)
@@ -32,7 +40,7 @@ classdef PM100USBController < handle
                 % read the answer
                 readPower = str2double(fgetl(obj.VisaConnection));
                 if ~isnan(readPower)
-                    obj.LastPower = readPower;
+                    obj.LastPower = readPower*obj.CAL_FACTOR;
                 end
             end
             power = obj.LastPower;
