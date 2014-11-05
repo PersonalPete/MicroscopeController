@@ -18,13 +18,13 @@ classdef SimpleMscopeGUI < handle
         TirfSlowStep = 0.01; % Step size for TIRF
         TirfFastStep = 0.50;
         
-        LRSlowStep = 0.001; % 1 um
+        LRSlowStep = 0.002; % 1 um
         LRFastStep = 0.082; % 1 FOV
         
-        UDSlowStep = 0.001; % 1 um
+        UDSlowStep = 0.002; % 1 um
         UDFastStep = 0.027; % 1/3 FOV
         
-        ZSlowStep = 50e-6 % 50 nm 
+        ZSlowStep = 100e-6 % 50 nm 
         ZFastStep = 5e-3; % 5 um
         
         % Software limits for travel range
