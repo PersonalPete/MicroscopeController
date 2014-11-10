@@ -24,7 +24,7 @@ classdef SimpleMscopeGUI < handle
         UDSlowStep = 0.002; % 1 um
         UDFastStep = 0.027; % 1/3 FOV
         
-        ZSlowStep = 100e-6 % 50 nm 
+        ZSlowStep = 100e-6 % 50 nm
         ZFastStep = 5e-3; % 5 um
         
         % Software limits for travel range
@@ -202,7 +202,7 @@ classdef SimpleMscopeGUI < handle
         LeftRightLastPos = NaN;
         UpDownLastPos = NaN;
         FocusLastPos = NaN;
-
+        
         % Tirf Stage Position
         TirfSetPos;
         TirfLastPos = NaN;
@@ -237,7 +237,7 @@ classdef SimpleMscopeGUI < handle
         NIRBusy = 0;
         
         % CONSTANTS
-        AUTO_FACTOR = 2; % auto scales between the minimum and AUTO_FACTOR*(mean(data - min)) + min
+        AUTO_FACTOR = 3; % auto scales between the minimum and AUTO_FACTOR*(mean(data - min)) + min
         
         MAX_DATA = 2^16 - 1; % for the 16-bit data we are taking
         
@@ -431,6 +431,7 @@ classdef SimpleMscopeGUI < handle
                 % spool path input
                 obj.SpoolPathH = uicontrol('Parent',obj.MainFigH,...
                     'Callback',@obj.setSpoolPath,...
+                    'keyPressFcn',@obj.tabSpoolPath,...
                     'Style','edit',...
                     'BackgroundColor',obj.COLOR_INPUT_BGD,...
                     'Units','Normalized',...
@@ -441,7 +442,8 @@ classdef SimpleMscopeGUI < handle
                     'FontWeight','normal',...
                     'ForegroundColor',obj.COLOR_INPUT_TEXT,...
                     'String',obj.SpoolPath,...
-                    'Visible','on');
+                    'Visible','on',...
+                    'tooltip','Use arrow keys to browse');
                 
                 % spool file name base
                 obj.SpoolNameH = uicontrol('Parent',obj.MainFigH,...
@@ -1057,7 +1059,7 @@ classdef SimpleMscopeGUI < handle
                     'Style','slider',...
                     'Min',1,...
                     'Max',obj.MAX_DATA,... % only zero and one because we are taking the range as the fraction of the remaining data values to not truncate
-                    'Value',1,...    
+                    'Value',1,...
                     'SliderStep',(1/obj.MAX_DATA).*[10 1000],... % minor and major steps
                     'BackgroundColor',obj.COLOR_INPUT_BGD,...
                     'ForegroundColor',[0 0 0],...
@@ -1418,7 +1420,7 @@ classdef SimpleMscopeGUI < handle
             
             % same for TIRF Stage
             obj.TirfSetPos = obj.StageCon.getPosition(obj.TirfStage);
-            set(obj.TirfDisplayH,'string',sprintf('%.2f',obj.TirfSetPos));            
+            set(obj.TirfDisplayH,'string',sprintf('%.2f',obj.TirfSetPos));
             
             
             % make what we have visible
@@ -1690,6 +1692,89 @@ classdef SimpleMscopeGUI < handle
             end
         end
         
+        function tabSpoolPath(obj,src,evt)
+            % if not idle then don't allow any changes
+            if obj.State ~= 0
+                set(src,'String',obj.SpoolPath);% reset the input
+                return % cancel any changes
+            end
+            
+            currentPath = get(src,'String');
+            slashArray = strfind(currentPath,'\'); % only on WIN
+            lastForwardSlash = strfind(currentPath,'/');
+            slashArray = [slashArray, lastForwardSlash];
+            slashArray = sort(slashArray);
+            lastSlash = slashArray(end);
+            currentParentFolder = currentPath(1:max(1,lastSlash-1));
+            currentFolder = currentPath(min(end,lastSlash+1):end);
+            if strcmp(currentFolder,'\') || strcmp(currentFolder,'/');
+                currentFolder = '';
+            end
+            foldersWithin = {};
+            numFolders = 0;
+            if exist(currentParentFolder,'dir')
+                % if the folder part of the path is a directory, then lets
+                % extract the names of the folders within
+                listWithin = dir(fullfile(currentParentFolder,'\'));
+                for entryDex = 1:length(listWithin)
+                    if listWithin(entryDex).isdir && ~strcmp(listWithin(entryDex).name,'.') ...
+                            && ~strcmp(listWithin(entryDex).name,'..')
+                        numFolders = numFolders + 1;
+                        foldersWithin{numFolders} = listWithin(entryDex).name;
+                    end
+                end
+                currentSelectionDex = find(strcmp(currentFolder,foldersWithin),1);
+                % completion for filenames
+                if strcmp(evt.Key,'uparrow')
+                    % select next folder in reverse alphabetical order
+                    if isempty(currentSelectionDex) % we haven't selected a valid folder
+                        if ~isempty(foldersWithin)
+                            set(src,'String',fullfile(currentParentFolder,foldersWithin{end}));
+                        end
+                    else
+                        folderToSelect = currentSelectionDex - 1;
+                        if folderToSelect == 0, folderToSelect = length(foldersWithin); end
+                        set(src,'String',fullfile(currentParentFolder,foldersWithin{folderToSelect}));
+                    end
+                elseif strcmp(evt.Key,'downarrow')
+                    % select next folder in alphabetical order
+                    if isempty(currentSelectionDex) % we haven't selected a valid folder
+                        if ~isempty(foldersWithin)
+                            set(src,'String',fullfile(currentParentFolder,foldersWithin{1}));
+                        end
+                    else
+                        folderToSelect = currentSelectionDex + 1;
+                        if folderToSelect > length(foldersWithin), folderToSelect = 1; end
+                        set(src,'String',fullfile(currentParentFolder,foldersWithin{folderToSelect}));
+                    end
+                elseif strcmp(evt.Key,'leftarrow')
+                    % go to parent folder
+                    if ~strcmp(currentParentFolder,'') && length(slashArray) > 1
+                        set(src,'String',fullfile(currentParentFolder));
+                    end
+                elseif strcmp(evt.Key,'rightarrow')
+                    % autocomplete folder name
+                    if ~isempty(currentSelectionDex)
+                        % if we have already selected a valid folder
+                        set(src,'String',fullfile(currentParentFolder,currentFolder,'\'));
+                    elseif strcmp(currentPath(end),'/') || strcmp(currentPath(end),'\')
+                        if ~isempty(foldersWithin)
+                            set(src,'String',fullfile(currentParentFolder,foldersWithin{1}));
+                        end
+                    elseif ~isempty(find(strncmp(currentFolder,foldersWithin,length(currentFolder)),1));
+                        currentSelectionDex = find(strncmp(currentFolder,foldersWithin,length(currentFolder)),1);
+                        set(src,'String',fullfile(currentParentFolder,foldersWithin{currentSelectionDex}));
+                    else
+                        if ~isempty(foldersWithin)
+                            set(src,'String',fullfile(currentParentFolder,foldersWithin{1}));
+                        end
+                    end
+                elseif ~strcmp(evt.Character,' ') || strcmp(evt.Key,'space')
+                    % i.e. a normal character or the spacebar
+                end
+            end
+        end
+        
         function setSpoolName(obj,src,~)
             % make sure this hasn't been called immediately after an
             % acquire
@@ -1942,68 +2027,68 @@ classdef SimpleMscopeGUI < handle
         function leftMove(obj,~,~)
             tmpPos = obj.LeftRightSetPos + obj.SwapLR*obj.LRSlowStep;
             tmpPos = min(tmpPos,max(obj.RLLim));
-            obj.LeftRightSetPos = max(tmpPos,min(obj.RLLim));           
+            obj.LeftRightSetPos = max(tmpPos,min(obj.RLLim));
         end
         function rightMove(obj,~,~)
             tmpPos = obj.LeftRightSetPos - obj.SwapLR*obj.LRSlowStep;
             tmpPos = min(tmpPos,max(obj.RLLim));
-            obj.LeftRightSetPos = max(tmpPos,min(obj.RLLim));            
+            obj.LeftRightSetPos = max(tmpPos,min(obj.RLLim));
         end
         
         function upMove(obj,~,~)
             tmpPos = obj.UpDownSetPos + obj.SwapUD*obj.UDSlowStep;
             tmpPos = min(tmpPos,max(obj.UDLim));
-            obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));          
+            obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));
         end
         function downMove(obj,~,~)
             tmpPos = obj.UpDownSetPos - obj.SwapUD*obj.UDSlowStep;
             tmpPos = min(tmpPos,max(obj.UDLim));
-            obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));            
+            obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));
         end
         
         function focusUpMove(obj,~,~)
             tmpPos = obj.FocusSetPos + obj.SwapZ*obj.ZSlowStep;
             tmpPos = min(tmpPos,max(obj.ZLim));
-            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));       
+            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
         end
         function focusDownMove(obj,~,~)
             tmpPos = obj.FocusSetPos - obj.SwapZ*obj.ZSlowStep;
             tmpPos = min(tmpPos,max(obj.ZLim));
-            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));            
+            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
         end
         
         % Fast Moving
         function leftFastMove(obj,~,~)
             tmpPos = obj.LeftRightSetPos + obj.SwapLR*obj.LRFastStep;
             tmpPos = min(tmpPos,max(obj.RLLim));
-            obj.LeftRightSetPos = max(tmpPos,min(obj.RLLim));           
+            obj.LeftRightSetPos = max(tmpPos,min(obj.RLLim));
         end
         function rightFastMove(obj,~,~)
             tmpPos = obj.LeftRightSetPos - obj.SwapLR*obj.LRFastStep;
             tmpPos = min(tmpPos,max(obj.RLLim));
-            obj.LeftRightSetPos = max(tmpPos,min(obj.RLLim));            
+            obj.LeftRightSetPos = max(tmpPos,min(obj.RLLim));
         end
         
         function upFastMove(obj,~,~)
             tmpPos = obj.UpDownSetPos + obj.SwapUD*obj.UDFastStep;
             tmpPos = min(tmpPos,max(obj.UDLim));
-            obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));          
+            obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));
         end
         function downFastMove(obj,~,~)
             tmpPos = obj.UpDownSetPos - obj.SwapUD*obj.UDFastStep;
             tmpPos = min(tmpPos,max(obj.UDLim));
-            obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));            
+            obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));
         end
         
         function focusUpFastMove(obj,~,~)
             tmpPos = obj.FocusSetPos + obj.SwapZ*obj.ZFastStep;
             tmpPos = min(tmpPos,max(obj.ZLim));
-            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));       
+            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
         end
         function focusDownFastMove(obj,~,~)
             tmpPos = obj.FocusSetPos - obj.SwapZ*obj.ZFastStep;
             tmpPos = min(tmpPos,max(obj.ZLim));
-            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));            
+            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
         end
         
         %% TIRF Stage Moving
@@ -2040,9 +2125,9 @@ classdef SimpleMscopeGUI < handle
         end
         
         function setRangeImage(obj,src,~)
-%             newRange = get(src,'Value')
-%             newMax = obj.ImageLimits(1) + newRange*(obj.MAX_DATA-obj.ImageLimits(1));
-%             newMax = max(newMax,obj.ImageLimits(1) + 1);
+            %             newRange = get(src,'Value')
+            %             newMax = obj.ImageLimits(1) + newRange*(obj.MAX_DATA-obj.ImageLimits(1));
+            %             newMax = max(newMax,obj.ImageLimits(1) + 1);
             newMax = max(get(src,'Value'),obj.ImageLimits(1)+1);
             obj.ImageLimits(2) = newMax;
         end
@@ -2054,13 +2139,13 @@ classdef SimpleMscopeGUI < handle
             newMax = obj.AUTO_FACTOR*( mean(mostRecentImage(:)-newMin) ) + newMin + 1;
             newCLim = [newMin, newMax];
             
-%             set(obj.MinH,'Value',newMin);
-%             valueToSet = (newMax-newMin)/(obj.MAX_DATA-newMin)
-%             set(obj.RangeH,'Value',valueToSet); % as a fraction of possible range
+            %             set(obj.MinH,'Value',newMin);
+            %             valueToSet = (newMax-newMin)/(obj.MAX_DATA-newMin)
+            %             set(obj.RangeH,'Value',valueToSet); % as a fraction of possible range
             
             set(obj.RangeH,'Value',newMax);
             set(obj.MinH,'Value',newMin);
-            obj.ImageLimits = newCLim;            
+            obj.ImageLimits = newCLim;
             set(obj.SinglePlotAxisH,'CLim',newCLim);
         end
         
