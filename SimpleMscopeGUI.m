@@ -11,7 +11,7 @@ classdef SimpleMscopeGUI < handle
         
         %
         RedPort = 'COM6'; % 'TEST';
-        SwapLR = +1; % choose -1 or 1 to change left right behaviour
+        SwapLR = -1; % choose -1 or 1 to change left right behaviour
         SwapUD = 1; % choose -1 or 1 to change up down
         SwapZ = -1; % ditto
         
@@ -342,6 +342,7 @@ classdef SimpleMscopeGUI < handle
                 % build the main figure - visibility off for now
                 %% MAIN FIGURE
                 obj.MainFigH = figure('CloseRequestFcn',@obj.delete,...
+                    'KeyPressFcn',@obj.keysMoveStages,...
                     'Color',obj.COLOR_BGD,...
                     'ColorMap',gray(obj.MAX_DATA),...
                     'DockControls','off',...
@@ -353,6 +354,10 @@ classdef SimpleMscopeGUI < handle
                     'Toolbar','none',...
                     'MenuBar','none',...
                     'Visible','off');
+                
+                % default keypressfcn, so that we can always move the stage
+                set(obj.MainFigH,'DefaultUiControlKeyPressFcn',@obj.keysMoveStages);
+                
                 %% STATUS INDICATORS
                 % build the camera status indicator
                 obj.CamStatH = uicontrol('Parent',obj.MainFigH,...
@@ -2024,6 +2029,45 @@ classdef SimpleMscopeGUI < handle
         
         %% POSITION CHANGING
         
+        function keysMoveStages(obj,~,evt)
+            % using arrow keys to navigate around the FOV
+            keyPressed = evt.Key;
+            if ~isempty(evt.Modifier)
+                controlPressed = strcmp(evt.Modifier{1},'control');
+            else
+                controlPressed = 0;
+            end
+            if controlPressed
+                if strcmp(keyPressed,'leftarrow')
+                    obj.leftFastMove;
+                elseif strcmp(keyPressed,'rightarrow')
+                    obj.rightFastMove;
+                elseif strcmp(keyPressed,'uparrow')
+                    obj.upFastMove;
+                elseif strcmp(keyPressed,'downarrow')
+                    obj.downFastMove;
+                elseif strcmp(keyPressed,'pageup')
+                    obj.focusUpFastMove;
+                elseif strcmp(keyPressed,'pagedown')
+                    obj.focusDownFastMove;
+                end                
+            else
+                if strcmp(keyPressed,'leftarrow')
+                    obj.leftMove;
+                elseif strcmp(keyPressed,'rightarrow')
+                    obj.rightMove;
+                elseif strcmp(keyPressed,'uparrow')
+                    obj.upMove;
+                elseif strcmp(keyPressed,'downarrow')
+                    obj.downMove;
+                elseif strcmp(keyPressed,'pageup')
+                    obj.focusUpMove;
+                elseif strcmp(keyPressed,'pagedown')
+                    obj.focusDownMove;
+                end 
+            end
+        end
+        
         function leftMove(obj,~,~)
             tmpPos = obj.LeftRightSetPos + obj.SwapLR*obj.LRSlowStep;
             tmpPos = min(tmpPos,max(obj.RLLim));
@@ -2122,6 +2166,9 @@ classdef SimpleMscopeGUI < handle
             newMin = get(src,'Value');
             newMax = max(obj.ImageLimits(2),newMin + 1);
             obj.ImageLimits = [newMin newMax];
+            set(src,'enable','off');
+            drawnow;
+            set(src,'enable','on');
         end
         
         function setRangeImage(obj,src,~)
@@ -2130,6 +2177,9 @@ classdef SimpleMscopeGUI < handle
             %             newMax = max(newMax,obj.ImageLimits(1) + 1);
             newMax = max(get(src,'Value'),obj.ImageLimits(1)+1);
             obj.ImageLimits(2) = newMax;
+            set(src,'enable','off');
+            drawnow;
+            set(src,'enable','on');
         end
         
         function autoscaleImage(obj,~,~)
