@@ -24,7 +24,7 @@ classdef SimpleMscopeGUI < handle
         UDSlowStep = 0.002; % 1 um
         UDFastStep = 0.027; % 1/3 FOV
         
-        ZSlowStep = 100e-6 % 50 nm
+        ZSlowStep = 50e-6 % 50 nm
         ZFastStep = 5e-3; % 5 um
         
         % Software limits for travel range

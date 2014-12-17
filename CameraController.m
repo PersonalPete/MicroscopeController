@@ -40,7 +40,7 @@ classdef CameraController < handle
         DRV_TEMP_NOT_STABILIZED = 20035;
         
         SPOOL_FILE = 'fits';
-        TEMP_MIN = -80; % we can set -120, but it will not actually do it
+        TEMP_MIN = -90; % we can set -120, but it will not actually do it
         TEMP_MAX = 20;
     end
     

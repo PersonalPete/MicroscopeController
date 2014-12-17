@@ -72,7 +72,7 @@ classdef CoherentCube < handle
         end
     end
     
-    methods (Access = private)
+    methods (Access = public)
         function stringResponse = sendAndRec(obj,stringSend)
             if obj.TEST_MODE
                 fprintf('\nSending %s to red laser\n',stringSend);

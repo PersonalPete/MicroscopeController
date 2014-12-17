@@ -1,0 +1,34 @@
+/* afCloseCamera
+ *  INPUT hCam
+ *
+ * Open connection to THORLABS DCC1545M-GL
+ */
+
+#include "mex.h"
+#include <iostream>
+#include "uc480.h"
+
+void mexFunction(int nlhs,mxArray *plhs[],int nrhs,const mxArray *prhs[])
+{
+    // CHECK ARGS
+    if (nrhs != 1) {
+        mexErrMsgIdAndTxt( "Mscope:initialiseCamera:invalidNumInputs",
+                "One Input arguments accepted.");
+    }
+    if (nlhs > 0) {
+        mexErrMsgIdAndTxt( "Mscope:initialiseCamera:maxlhs",
+                "Too many output arguments.");
+    }    
+    
+
+    
+    // FREE MEMORY AND CLOSE CONNECTION
+    VOID *pcImgMem;
+    rv = is_GetImageMem(hCam, &pcImgMem)
+    
+    rv = is_FreeImageMem(hCam, pcImgMem, id);
+    rv = is_ExitCamera(hCam);
+    
+    return;
+    
+}
