@@ -1,6 +1,6 @@
 /* afInitialiseCamera
  *
- *  ARGS    INT hCam, double frameRate, double exposure
+ *  ARGS    INT hCam, double exposure, double framerate
  * 
  */
 
@@ -31,16 +31,16 @@ void mexFunction(int nlhs,mxArray *plhs[],int nrhs,const mxArray *prhs[])
     
     if (!isScalarArray(prhs[1])) {
         mexErrMsgIdAndTxt( "Mscope:setAcqMode:invalidArg",
-                "Frame rate is a double (in Hz)");
+                "Exposure is a double (in Hz)");
     }
     
     if (!isScalarArray(prhs[1])) {
         mexErrMsgIdAndTxt( "Mscope:setAcqMode:invalidArg",
-                "Exposure rate is a double (in ms)");
+                "Frame rate rate is a double (in ms)");
     }
     
     int hCam = (int) mxGetScalar(prhs[0]);
-    double frameRate = (double) mxGetScalar(prhs[1]);
+    double frameRate = (double) mxGetScalar(prhs[2]);
     double expTime = (double) mxGetScalar(prhs[1]);
     
     // FRAME RATE

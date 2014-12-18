@@ -1,4 +1,4 @@
-classdef mScopeFileSelect < handle
+classdef MScopeFileSelect < handle
     
     properties
         MainFigH
@@ -14,7 +14,7 @@ classdef mScopeFileSelect < handle
     end
     
     methods
-        function obj = mScopeFileSelect
+        function obj = MScopeFileSelect
             
             obj.MainFigH = figure('KeyPressFcn',@(~,~) fprintf('helloworld\n'));
             
@@ -37,7 +37,7 @@ classdef mScopeFileSelect < handle
                 'tooltip','Use arrow keys to browse');
             
             obj.ButtonH = uicontrol('Parent',obj.MainFigH,...
-                'style','pushbutton')
+                'style','pushbutton');
         end
         
         function emptyFcn(~,~,~)
