@@ -12,12 +12,11 @@
 #include <iostream>
 #include "uc480.h"
 
+#include "afconstants.h"
+
 #define DFT_EXP_TIME 10 // milliseconds per frame
 #define DFT_FRAME_RATE 10 // frames per second
 #define DFT_PX_CLOCK 35 // MHz (max 43)
-
-#define H_PIX 1280
-#define V_PIX 1024
 
 void mexFunction(int nlhs,mxArray *plhs[],int nrhs,const mxArray *prhs[])
 {
@@ -56,11 +55,19 @@ void mexFunction(int nlhs,mxArray *plhs[],int nrhs,const mxArray *prhs[])
     // COLOR MODE
     rv = is_SetColorMode(hCam, IS_CM_MONO8); // 8-bit monochrome
     
+     // SET THE SUBSAMPLING
+    rv = is_SetSubSampling(hCam, IS_SUBSAMPLING_4X_VERTICAL | IS_SUBSAMPLING_4X_HORIZONTAL);
+    
     // ALLOCATE MEMORY
     int bitDepth = 8;
     char* pcImgMem;
     int id;
     rv = is_AllocImageMem(hCam, H_PIX, V_PIX, bitDepth, &pcImgMem, &id);
+    
+    // CALCULATE THE LINE PITCH
+    int linePitch;
+    rv = is_GetImageMemPitch(hCam, &linePitch);
+    std::printf("\nLine Pitch = %i\n",linePitch);
     
     // SET MEMORY
     rv = is_SetImageMem(hCam, pcImgMem, id);

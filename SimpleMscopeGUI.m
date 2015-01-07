@@ -75,7 +75,7 @@ classdef SimpleMscopeGUI < handle
         
         % handles to displayed objects - i.e. without callbacks
         %% Autofocus settings ui handles
-        AfRoi = [750, 950, 600, 750];
+        AfRoi = [190, 240, 150, 190];
         AfFigOpenH;
         AfFigH;
         AfFigPos = [0.5 0.25 0.3 0.4];
@@ -1260,8 +1260,8 @@ classdef SimpleMscopeGUI < handle
                     'Units','Normalized',...
                     'XTick',[],...
                     'YTick',[],...
-                    'Xlim',[0 1280],...
-                    'Ylim',[0 1024],...
+                    'Xlim',[0 obj.AfCamCon.HOR_MAX],...
+                    'Ylim',[0 obj.AfCamCon.VER_MAX],...
                     'Clim',[0 255]); % 
                 
                  obj.AfImageH = image('Parent',obj.AfAxisH,...
@@ -2434,7 +2434,7 @@ classdef SimpleMscopeGUI < handle
                 inputTime = str2double(inputTimeString);
                 if ~isnan(inputTime)
                     % make sure the time is valid here
-                    obj.AfExposure = min(inputTime, obj_AF_EXP_MAX);
+                    obj.AfExposure = min(inputTime, obj.AF_EXP_MAX);
                     obj.AfExposure = max(obj.AfExposure,0);
                     obj.AfCamCon.setExpFrame(obj.AfExposure,obj.AfFrameRate);                   
                 end
@@ -2726,6 +2726,10 @@ classdef SimpleMscopeGUI < handle
             end
             try
                 stop(obj.TimerPowerMeter);
+            catch
+            end
+            try
+                stop(obj.TimerAfFig);
             catch
             end
             

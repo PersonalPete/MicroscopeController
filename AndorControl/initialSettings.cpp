@@ -24,7 +24,7 @@
 
 #define DFT_CHANNEL 0
 #define DFT_AMP 0 
-#define DFT_PREA_GAIN 1
+#define DFT_PREA_GAIN 0
 #define DFT_EMGAIN_MODE 1
 #define DFT_EMGAIN_ADV 1 // allow high gains
 #define DFT_EMCCD_GAIN 0
