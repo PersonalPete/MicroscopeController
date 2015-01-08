@@ -34,9 +34,9 @@ classdef AfCamController < handle
             frameData = frameData(1:obj.HOR_MAX,1:obj.VER_MAX);
         end % getLastFrame
         
-        function setExpFrame(obj, expTime, frameRate)
-            obj.ExpTime = expTime; obj.FrameRate = frameRate;
-            afSetExpFrame(obj.CamH,obj.ExpTime,obj.FrameRate);
+        function [trueExpTime, trueFrameRate] = setExpFrame(obj, expTime, frameRate)
+            [trueExpTime, trueFrameRate] = afSetExpFrame(obj.CamH,expTime,frameRate);
+            obj.ExpTime = trueExpTime; obj.FrameRate = trueFrameRate;
         end % setExpFrame
         
         function setRoi(obj, roi)
@@ -51,20 +51,11 @@ classdef AfCamController < handle
             obj.Roi = roi;
         end % setRoi
         
-        function [hCent, vCent] = centroidLastFrame(obj)
-            % centroid calculated as Sum_i{x_i*i}/Sum_i{x_i}
-            lastImage = getLastFrame(obj);
-            roi = obj.Roi; % extract only a region of interest
-            lastImageCrop = double(lastImage(roi(1):roi(2),roi(3):roi(4)));
-            % compute the centroids
-            normConst = sum(sum(lastImageCrop,1),2); 
-            hNum = sum(sum(bsxfun(@times,lastImageCrop,(roi(1):roi(2))'),1),2);
-            hCent = hNum/normConst;
-            if nargout > 1
-                vNum = sum(sum(bsxfun(@times,lastImageCrop,roi(3):roi(4)),2),1);
-                vCent = vNum/normConst;
-            end                      
-            
+        function hCent = centroidLast(obj,framesToAverage)
+            roi = obj.Roi;
+            hCent = afCentroidImages(obj.CamH, obj.MemPtr,...
+                roi(1), roi(2), roi(3), roi(4),...
+                framesToAverage);           
         end % centroidLastFrame
             
         function delete(obj)

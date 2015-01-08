@@ -1,6 +1,7 @@
 /* afInitialiseCamera
  *
- *  ARGS    INT hCam, double exposure, double framerate
+ *  RETURNS DOUBLE exposureSet, DOUBLE framerateSet
+ *  ARGS    INT hCam, DOUBLE exposure, DOUBLE framerate
  * 
  */
 
@@ -19,7 +20,7 @@ void mexFunction(int nlhs,mxArray *plhs[],int nrhs,const mxArray *prhs[])
         mexErrMsgIdAndTxt( "Mscope:initialiseCamera:invalidNumInputs",
                 "No Input arguments accepted.");
     }
-    if (nlhs > 0) {
+    if (nlhs > 2) {
         mexErrMsgIdAndTxt( "Mscope:initialiseCamera:maxlhs",
                 "Too many output arguments.");
     }    
@@ -44,12 +45,25 @@ void mexFunction(int nlhs,mxArray *plhs[],int nrhs,const mxArray *prhs[])
     double expTime = (double) mxGetScalar(prhs[1]);
     
     // FRAME RATE
-    double actualFrameRate;
-    
+    double actualFrameRate;    
     int rv = is_SetFrameRate(hCam, frameRate, &actualFrameRate);
       
     // EXPOSURE TIME
     rv = is_Exposure(hCam, IS_EXPOSURE_CMD_SET_EXPOSURE, &expTime, 8);
+    
+    double actualExposure;
+    rv = is_Exposure(hCam, IS_EXPOSURE_CMD_GET_EXPOSURE, &actualExposure, 8);
+    
+    // RETURN THE ACTUAL VALUES
+    mwSignedIndex scalarDims[2] = {1,1}; // elements in image
+    
+    plhs[0] = mxCreateNumericArray(2, scalarDims, mxDOUBLE_CLASS, mxREAL);
+    double * exposurePtr = mxGetPr(plhs[0]);
+    memcpy(exposurePtr, &actualExposure, sizeof(actualExposure));
+    
+    plhs[1] = mxCreateNumericArray(2, scalarDims, mxDOUBLE_CLASS, mxREAL);
+    double * frameratePtr = mxGetPr(plhs[1]);
+    memcpy(frameratePtr, &actualFrameRate, sizeof(actualFrameRate));
     
     return;
     
