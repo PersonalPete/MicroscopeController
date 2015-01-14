@@ -109,6 +109,9 @@ classdef SimpleMscopeGUI < handle
         
         AfTimerPeriod = 1; % should always be calculated but lets set a default anyway
         
+        AfStatus = 0; % 0 off, 1 good, 2 standby (low power)
+        AfStatusH;
+        
         %% Advanced settings ui handles
         AdvFigH; % advanced settings figure window
         
@@ -154,6 +157,7 @@ classdef SimpleMscopeGUI < handle
         FrAcqH; % how many frames acquired
         FrameRateH;
         MessageH;
+        % See also AfStatusH
         
         %% power meter reading
         PowerMeterReadH;
@@ -291,6 +295,7 @@ classdef SimpleMscopeGUI < handle
         AF_AVG_MIN = 1000; % (/ms) Minimum autofocus accumulation time
         AF_FRAMES_MAX = 900; % Maximum number of frames the autofocus can average over
         AF_FEEDBACK_FAC = 0.5; % fraction of the suggested move to make
+        AF_FEEDBACK_FAC_ACQ = 0.05; % autofocus works slower during spooling
         AF_INTEN_MIN = 0.5; % fraction of the initial brightness required for AF to try and correct
         
         % define some useful constants for customising the look
@@ -421,10 +426,10 @@ classdef SimpleMscopeGUI < handle
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_STAT_ERR,...
                     'Units','Normalized',...
-                    'Position',[0.0, 0.0, 0.1, 0.05],...
+                    'Position',[0.0, 0.025, 0.1, 0.025],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
-                    'FontSize',0.475,...
+                    'FontSize',0.95,...
                     'FontWeight','normal',...
                     'ForegroundColor',obj.COLOR_STAT_TEXT,...
                     'String','',... % default blank string, but gets updated on next line
@@ -437,16 +442,29 @@ classdef SimpleMscopeGUI < handle
                     'Style','text',...
                     'BackgroundColor',obj.COLOR_STAT_ERR,...
                     'Units','Normalized',...
-                    'Position',[0.1, 0.0, 0.1, 0.05],...
+                    'Position',[0.0, 0.0, 0.1, 0.025],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
-                    'FontSize',0.475,...
+                    'FontSize',0.95,...
                     'FontWeight','normal',...
                     'ForegroundColor',obj.COLOR_STAT_TEXT,...
                     'String','',... % default blank string, but gets updated on next line
                     'Visible','on');
                 
                 obj.updateTemp; % and get the latest information
+                
+                obj.AfStatusH = uicontrol('Parent',obj.MainFigH,...
+                    'Style','text',...
+                    'BackgroundColor',obj.COLOR_STAT_OK,...
+                    'Units','Normalized',...
+                    'Position',[0.1, 0.0, 0.1, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INFO,...
+                    'FontSize',0.475,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_STAT_TEXT,...
+                    'String','AF OFF',...
+                    'Visible','on');
                 
                 obj.FrameRateH = uicontrol('Parent',obj.MainFigH,...
                     'Style','text',...
@@ -1442,7 +1460,7 @@ classdef SimpleMscopeGUI < handle
                     'Position',[0.1, 0.2, 0.8, 0.6],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INFO,...
-                    'FontSize',0.3,...
+                    'FontSize',0.35,...
                     'FontWeight','normal',...
                     'ForegroundColor',obj.COLOR_INFO_TEXT,...
                     'String','Autofocus initialising...',...
@@ -2624,57 +2642,71 @@ classdef SimpleMscopeGUI < handle
             if (get(src,'Value') == 1 && obj.State == 1) % only calibrate in video mode
                 % turn the autofocus on
                 if ~obj.AfOn
-                    obj.AfOn = 1;
-                    % all the autofocus turning on logic
-                    set(obj.AfEngageFigH,'Visible','on'); % display the status figure window
-                    % calculate the appropriate AF camera settings
-                    if obj.AlexMode
-                        if obj.AlexSelection == 2 || obj.AlexSelection == 5
-                            % three colour alex
-                            alexFactor = 3;
+                    set(obj.AfStatusH,'String','AF ON',...
+                        'backgroundcolor',obj.COLOR_STAT_WARN);
+                    try
+                        obj.AfOn = 1;
+                        % all the autofocus turning on logic
+                        set(obj.AfEngageFigH,'Visible','on'); % display the status figure window
+                        % calculate the appropriate AF camera settings
+                        if obj.AlexMode
+                            if obj.AlexSelection == 2 || obj.AlexSelection == 5
+                                % three colour alex
+                                alexFactor = 3;
+                            else
+                                % two colour alex
+                                alexFactor = 2;
+                            end
                         else
-                            % two colour alex
-                            alexFactor = 2;
+                            alexFactor = 1;
                         end
-                    else
-                        alexFactor = 1;
+                        cycleTime = obj.FrameTime*alexFactor; % time in milleseconds for an illumination cycle
+                        afAvgTime = cycleTime; % time for autofocus to average over
+                        while afAvgTime < obj.AF_AVG_MIN
+                            afAvgTime = afAvgTime + cycleTime;
+                        end
+                        afFramesInAvgTime = min(round(afAvgTime*1e-3*obj.AfFrameRate),obj.AF_FRAMES_MAX);
+                        obj.AfFramesCentroid = afFramesInAvgTime;
+                        % we now know how many frames to take from the
+                        % autofocus to make sure we get a whole number of
+                        % cycles lasting greater than obj.AF_AVG_MIN ms
+                        
+                        % now pause for the autofocus camera to acquire enough
+                        % frames
+                        pauseTime = 2*obj.AfFramesCentroid/obj.AfFrameRate;
+                        
+                        oldstate = pause('on');
+                        pause(pauseTime);
+                        % and set the target centroid
+                        obj.AfCentroidTarget = obj.AfCamCon.centroidLast(obj.AfFramesCentroid);
+                        obj.AfOriginalInten = obj.AfCamCon.getRoiIntensity;
+                        % move the stage to the calibration position, allow it to settle
+                        % and work out the response gradient in nm per pixels
+                        obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos + obj.AfCalibrationStep);
+                        pause(pauseTime); % pause to let stage settle and gather data
+                        obj.AfGradient = obj.AfCalibrationStep/(obj.AfCamCon.centroidLast(obj.AfFramesCentroid) - obj.AfCentroidTarget);
+                        
+                        % return home
+                        obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
+                        
+                        % start the autofocus timer
+                        set(obj.TimerAf,'period',round(obj.AfFramesCentroid/obj.AfFrameRate));
+                        obj.AfStatus = 2; % tell the timer that the AF is on and engaged
+                        start(obj.TimerAf);
+                        
+                        % hide the modal window
+                        pause(oldstate);
+                        set(obj.AfEngageFigH,'visible','off');
+                    catch
+                        % if there is a problem turning it on
+                        obj.AfOn = 0;
+                        obj.AfStatus = 0;
+                        try
+                            stop(obj.TimerAf);
+                        catch
+                        end
+                        set(obj.AfStatusH,'String','AF ERR','backgroundcolor',obj.COLOR_STAT_ERR);
                     end
-                    cycleTime = obj.FrameTime*alexFactor; % time in milleseconds for an illumination cycle
-                    afAvgTime = cycleTime; % time for autofocus to average over
-                    while afAvgTime < obj.AF_AVG_MIN
-                        afAvgTime = afAvgTime + cycleTime;
-                    end
-                    afFramesInAvgTime = min(round(afAvgTime*1e-3*obj.AfFrameRate),obj.AF_FRAMES_MAX);
-                    obj.AfFramesCentroid = afFramesInAvgTime;
-                    % we now know how many frames to take from the
-                    % autofocus to make sure we get a whole number of
-                    % cycles lasting greater than obj.AF_AVG_MIN ms
-                    
-                    % now pause for the autofocus camera to acquire enough
-                    % frames
-                    pauseTime = 2*obj.AfFramesCentroid/obj.AfFrameRate;
-                    
-                    oldstate = pause('on');
-                    pause(pauseTime);
-                    % and set the target centroid
-                    obj.AfCentroidTarget = obj.AfCamCon.centroidLast(obj.AfFramesCentroid);
-                    obj.AfOriginalInten = obj.AfCamCon.getRoiIntensity;
-                    % move the stage to the calibration position, allow it to settle
-                    % and work out the response gradient in nm per pixels
-                    obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos + obj.AfCalibrationStep);
-                    pause(pauseTime); % pause to let stage settle and gather data
-                    obj.AfGradient = obj.AfCalibrationStep/(obj.AfCamCon.centroidLast(obj.AfFramesCentroid) - obj.AfCentroidTarget);
-                    
-                    % return home
-                    obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
-                    
-                    % start the autofocus timer
-                    set(obj.TimerAf,'period',round(obj.AfFramesCentroid/obj.AfFrameRate));
-                    start(obj.TimerAf);
-                    
-                    % hide the modal window
-                    pause(oldstate);
-                    set(obj.AfEngageFigH,'visible','off');
                 end
             else % turn the autofocus off if it is already on
                 try
@@ -2683,6 +2715,8 @@ classdef SimpleMscopeGUI < handle
                 end
                 obj.AfOn = 0;
                 set(src,'Value',0)
+                obj.AfStatus = 0;
+                set(obj.AfStatusH,'String','AF OFF','backgroundcolor',obj.COLOR_STAT_OK);
             end
         end % afEngage
         
@@ -2690,20 +2724,37 @@ classdef SimpleMscopeGUI < handle
             % timer function for the autofocus
             % check that the autofocus image is bright enough to use
             if obj.AfCamCon.getRoiIntensity > obj.AF_INTEN_MIN*obj.AfOriginalInten
-                % get the autofocus centroid reading
-                currentCentroid = obj.AfCamCon.centroidLast(obj.AfFramesCentroid);
-                centroidChange = currentCentroid - obj.AfCentroidTarget;
-                % calculate the position to change 
-                positionChange = centroidChange*obj.AfGradient;
-                fprintf('\nAF detects a change of %.2f nm and is correcting it\n',1e6*positionChange);
-                % update the position we are aiming for
-                obj.FocusSetPos = obj.FocusSetPos - positionChange * obj.AF_FEEDBACK_FAC;
-                obj.FocusSetPos = min(obj.FocusSetPos,max(obj.ZLim));
-                obj.FocusSetPos = max(obj.FocusSetPos,min(obj.ZLim));
-                % command the stage to move
-                obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
-                obj.FocusLastPos = obj.FocusSetPos;
-            end 
+                % check whether we have just become ok
+                if obj.AfStatus == 2
+                    obj.AfStatus = 1;
+                    set(obj.AfStatusH,'String','AF OK','backgroundcolor',obj.COLOR_STAT_OK);
+                elseif obj.AfStatus == 1
+                    % get the autofocus centroid reading
+                    currentCentroid = obj.AfCamCon.centroidLast(obj.AfFramesCentroid);
+                    centroidChange = currentCentroid - obj.AfCentroidTarget;
+                    % calculate the position to change
+                    positionChange = centroidChange*obj.AfGradient;
+                    % update the position we are aiming for
+                    if obj.State == 2 % i.e. if it is in video mode
+                        feedbackFac = obj.AF_FEEDBACK_FAC_ACQ;
+                    else   
+                        feedbackFac = obj.AF_FEEDBACK_FAC;
+                    end
+                    obj.FocusSetPos = obj.FocusSetPos - positionChange * feedbackFac;
+                    obj.FocusSetPos = min(obj.FocusSetPos,max(obj.ZLim));
+                    obj.FocusSetPos = max(obj.FocusSetPos,min(obj.ZLim));
+                    % command the stage to move
+                    obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
+                    obj.FocusLastPos = obj.FocusSetPos;
+                    set(obj.AfStatusH,...
+                        'String',sprintf('AF %+05i',round(positionChange*1e6)),...
+                        'backgroundcolor',obj.COLOR_STAT_OK);
+                end
+            else
+                % set the status when the power is too low
+                obj.AfStatus = 2; % i.e. standby
+                set(obj.AfStatusH,'String','AF LOW POW','backgroundcolor',obj.COLOR_STAT_WARN);
+            end
         end
         
         %% ADVANCED SETTINGS
