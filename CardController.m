@@ -251,6 +251,9 @@ classdef CardController < handle
                 obj.NIRVi.release;
                 obj.RedVi.release
             catch
+                fprintf('\nProblem disconnecting from lasers\nAttempting to ensure all are off\n');
+                obj.setGreenLaser(0);
+                obj.GreenVi.release;
             end
             obj.CoherentCon.delete;
             obj.LabviewActXServer.delete;

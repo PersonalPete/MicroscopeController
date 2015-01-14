@@ -35,7 +35,7 @@ classdef SimpleMscopeGUI < handle
         
         % some defaults
         DFT_TRIGGER_FAST = 0; % set this to 1 for fast triggering
-       
+        
         TIMER_IDLE_PERIOD = 0.2; % (\s between updating displayed info)
         TIMER_ACQ_PERIOD = 0.033; % update at 30 Hz in this mode (maximum)
         TIMER_POS_PERIOD = 0.2; % for querying the position (maybe this is too fast)
@@ -72,6 +72,7 @@ classdef SimpleMscopeGUI < handle
         TimerPowerMeter; % for the power meter reading
         
         TimerAfFig; % for updating the AF camera view
+        TimerAf; % for handling the autofocus logic after it is engaged
         
         % handles to displayed objects - i.e. without callbacks
         %% Autofocus settings ui handles
@@ -91,9 +92,22 @@ classdef SimpleMscopeGUI < handle
         
         AfFrameRateStringH
         AfFrameRateH;
-        AfFrameRate = 100;
-        AfFramesCentroid = 100; % number of frames to centroid over
+        AfFrameRate = 170;
+        AfFramesCentroid = 170; % number of frames to centroid over
         
+        AfEngageH
+        AfEngageFigH
+        AfEngageFigPos = [0.42 0.50 0.16 0.1];
+        AfStatStringH
+        AfOn = 0;
+        AfCentroidTarget
+        AfGradient % how many nm our focus has moved by per autofocus pixel of change
+        AfOriginalInten
+        AfLastPosChangeTime
+        
+        AfCalibrationStep = 500e-6 % 500 nm
+        
+        AfTimerPeriod = 1; % should always be calculated but lets set a default anyway
         
         %% Advanced settings ui handles
         AdvFigH; % advanced settings figure window
@@ -274,6 +288,10 @@ classdef SimpleMscopeGUI < handle
         MAX_XYPIX = 512; % there only exist 512 pixels on our chip
         
         AF_EXP_MAX = 40; % (/ms)
+        AF_AVG_MIN = 1000; % (/ms) Minimum autofocus accumulation time
+        AF_FRAMES_MAX = 900; % Maximum number of frames the autofocus can average over
+        AF_FEEDBACK_FAC = 0.5; % fraction of the suggested move to make
+        AF_INTEN_MIN = 0.5; % fraction of the initial brightness required for AF to try and correct
         
         % define some useful constants for customising the look
         FigPos = [0.0, 0.4, 0.5, 0.6]; % outer position of the main figure
@@ -334,6 +352,9 @@ classdef SimpleMscopeGUI < handle
         COLOR_ADVBUT_BGD = [0.62 0.71 0.80];
         COLOR_ADVBUT_TEXT = [0.2 0.2  0.2];
         
+        COLOR_AFBUT_BGD = [0.24 0.35 0.67];
+        COLOR_AFBUT_TEXT = [1.0 1.0 1.0];
+        
         COLOR_RED   = [0.8 0.0 0.0];
         COLOR_GREEN = [0.0 0.8 0.0];
         COLOR_BLUE  = [0.0 0.0 0.8];
@@ -388,6 +409,7 @@ classdef SimpleMscopeGUI < handle
                     'Renderer','OpenGL',...
                     'Toolbar','none',...
                     'MenuBar','none',...
+                    'WindowStyle','normal',...
                     'Visible','off');
                 
                 % default keypressfcn, so that we can always move the stage
@@ -1229,13 +1251,13 @@ classdef SimpleMscopeGUI < handle
                     'Style','pushbutton',...
                     'BackgroundColor',obj.COLOR_ADVBUT_BGD,...
                     'Units','Normalized',...
-                    'Position',[0.80, 0.25, 0.20, 0.045],...
+                    'Position',[0.975, 0.25, 0.025, 0.05],...
                     'FontUnits','Normalized',...
                     'FontName',obj.FONT_INPUT,...
                     'FontSize',0.5,...
                     'FontWeight','normal',...
                     'ForegroundColor',obj.COLOR_ADVBUT_TEXT,...
-                    'String','AF SETTINGS',...
+                    'String','',...
                     'Visible','on');
                 
                 % close request function defined - should be ok -
@@ -1252,6 +1274,7 @@ classdef SimpleMscopeGUI < handle
                     'Renderer','OpenGL',...
                     'Toolbar','none',...
                     'MenuBar','none',...
+                    'WindowStyle','normal',...
                     'Visible','off');
                 
                 obj.AfAxisH = axes('Parent',obj.AfFigH,...
@@ -1265,9 +1288,9 @@ classdef SimpleMscopeGUI < handle
                     'YTick',[],...
                     'Xlim',[0 obj.AfCamCon.HOR_MAX],...
                     'Ylim',[0 obj.AfCamCon.VER_MAX],...
-                    'Clim',[0 255]); % 
+                    'Clim',[0 255]); %
                 
-                 obj.AfImageH = image('Parent',obj.AfAxisH,...
+                obj.AfImageH = image('Parent',obj.AfAxisH,...
                     'CDataMapping','scaled',...
                     'CData',0);
                 
@@ -1379,6 +1402,57 @@ classdef SimpleMscopeGUI < handle
                 % accurate
                 obj.setAfFrameRate(obj.AfFrameRateH);
                 
+                %% AUTOFOCUS ENGAGE
+                
+                obj.AfEngageH = uicontrol('Parent',obj.MainFigH,...
+                    'Callback',@obj.afEngage,...
+                    'Style','togglebutton',...
+                    'BackgroundColor',obj.COLOR_AFBUT_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.80, 0.25, 0.175, 0.05],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INPUT,...
+                    'FontSize',0.5,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_AFBUT_TEXT,...
+                    'String','AF ENGAGE',...
+                    'Min',0,...
+                    'Max',1,...
+                    'Value',0,...
+                    'Visible','on');
+                
+                obj.AfEngageFigH = figure('CloseRequestFcn','',...
+                    'Color',obj.COLOR_BGD,...
+                    'ColorMap',gray(obj.MAX_DATA),...
+                    'DockControls','off',...
+                    'Name','Autofocus Information',...
+                    'Units','Normalized',...
+                    'OuterPosition',obj.AfEngageFigPos,...
+                    'Pointer','arrow',...
+                    'Renderer','OpenGL',...
+                    'Toolbar','none',...
+                    'MenuBar','none',...
+                    'WindowStyle','modal',...
+                    'Visible','off');
+                
+                obj.AfStatStringH = uicontrol('Parent',obj.AfEngageFigH,...
+                    'Style','text',...
+                    'BackgroundColor',obj.COLOR_INFO_BGD,...
+                    'Units','Normalized',...
+                    'Position',[0.1, 0.2, 0.8, 0.6],...
+                    'FontUnits','Normalized',...
+                    'FontName',obj.FONT_INFO,...
+                    'FontSize',0.3,...
+                    'FontWeight','normal',...
+                    'ForegroundColor',obj.COLOR_INFO_TEXT,...
+                    'String','Autofocus initialising...',...
+                    'Visible','on');
+                
+                obj.TimerAf = timer('Period',obj.AfTimerPeriod,...
+                    'BusyMode','drop',...
+                    'ExecutionMode','fixedSpacing',...
+                    'TimerFcn',@(~,~)obj.afCalcAndCommand);
+                
                 %% ADVANCED OPTIONS (separate figure object)
                 
                 % button to open advanced settings
@@ -1410,6 +1484,7 @@ classdef SimpleMscopeGUI < handle
                     'Renderer','OpenGL',...
                     'Toolbar','none',...
                     'MenuBar','none',...
+                    'WindowStyle','normal',...
                     'Visible','off');
                 
                 % gain
@@ -1672,18 +1747,21 @@ classdef SimpleMscopeGUI < handle
             if obj.UpDownSetPos ~= obj.UpDownLastPos
                 obj.StageCon.setPosition(obj.UpDownStage,obj.UpDownSetPos);
             end
-            if obj.FocusSetPos ~= obj.FocusLastPos
-                obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
-            end
-            if obj.TirfSetPos ~= obj.TirfLastPos
-                obj.StageCon.setPosition(obj.TirfStage,obj.TirfSetPos);
-            end
-            
+                        
             obj.LeftRightLastPos = obj.LeftRightSetPos;
             obj.UpDownLastPos = obj.UpDownSetPos;
-            obj.FocusLastPos = obj.FocusSetPos;
-            obj.TirfLastPos = obj.TirfSetPos;
             
+            if ~obj.AfOn % only think about the TIRF and z-stage if there is no AF
+                if obj.FocusSetPos ~= obj.FocusLastPos
+                    obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
+                end
+                if obj.TirfSetPos ~= obj.TirfLastPos
+                    obj.StageCon.setPosition(obj.TirfStage,obj.TirfSetPos);
+                end
+                
+                obj.FocusLastPos = obj.FocusSetPos;
+                obj.TirfLastPos = obj.TirfSetPos;
+            end
             % don't update every position in every callback (for
             % smoothness)
             runCount = get(obj.TimerPosition,'TasksExecuted');
@@ -2241,7 +2319,7 @@ classdef SimpleMscopeGUI < handle
                     obj.focusUpFastMove;
                 elseif strcmp(keyPressed,'pagedown')
                     obj.focusDownFastMove;
-                end                
+                end
             else
                 if strcmp(keyPressed,'leftarrow')
                     obj.leftMove;
@@ -2255,7 +2333,7 @@ classdef SimpleMscopeGUI < handle
                     obj.focusUpMove;
                 elseif strcmp(keyPressed,'pagedown')
                     obj.focusDownMove;
-                end 
+                end
             end
         end
         
@@ -2271,25 +2349,43 @@ classdef SimpleMscopeGUI < handle
         end
         
         function upMove(obj,~,~)
+            
             tmpPos = obj.UpDownSetPos + obj.SwapUD*obj.UDSlowStep;
             tmpPos = min(tmpPos,max(obj.UDLim));
             obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));
         end
         function downMove(obj,~,~)
+            
+            
             tmpPos = obj.UpDownSetPos - obj.SwapUD*obj.UDSlowStep;
             tmpPos = min(tmpPos,max(obj.UDLim));
             obj.UpDownSetPos = max(tmpPos,min(obj.UDLim));
+            
         end
         
         function focusUpMove(obj,~,~)
-            tmpPos = obj.FocusSetPos + obj.SwapZ*obj.ZSlowStep;
-            tmpPos = min(tmpPos,max(obj.ZLim));
-            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
+            if obj.AfOn
+                % change the set position, change the target position and
+                % let the AF know (obj.AfLastPosChangeTime = tic;) when we
+                % changed the position, so it can wait long enough before
+                % correcting
+            else
+                tmpPos = obj.FocusSetPos + obj.SwapZ*obj.ZSlowStep;
+                tmpPos = min(tmpPos,max(obj.ZLim));
+                obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
+            end
         end
         function focusDownMove(obj,~,~)
-            tmpPos = obj.FocusSetPos - obj.SwapZ*obj.ZSlowStep;
-            tmpPos = min(tmpPos,max(obj.ZLim));
-            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
+            if obj.AfOn
+                % change the set position, change the target position and
+                % let the AF know (obj.AfLastPosChangeTime = tic;) when we
+                % changed the position, so it can wait long enough before
+                % correcting
+            else
+                tmpPos = obj.FocusSetPos - obj.SwapZ*obj.ZSlowStep;
+                tmpPos = min(tmpPos,max(obj.ZLim));
+                obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
+            end
         end
         
         % Fast Moving
@@ -2316,39 +2412,56 @@ classdef SimpleMscopeGUI < handle
         end
         
         function focusUpFastMove(obj,~,~)
-            tmpPos = obj.FocusSetPos + obj.SwapZ*obj.ZFastStep;
-            tmpPos = min(tmpPos,max(obj.ZLim));
-            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
+            if obj.AfOn
+                % this button doesn't do anything when AF is engaged
+            else
+                tmpPos = obj.FocusSetPos + obj.SwapZ*obj.ZFastStep;
+                tmpPos = min(tmpPos,max(obj.ZLim));
+                obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
+            end
         end
         function focusDownFastMove(obj,~,~)
-            tmpPos = obj.FocusSetPos - obj.SwapZ*obj.ZFastStep;
-            tmpPos = min(tmpPos,max(obj.ZLim));
-            obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
+            if obj.AfOn
+                % this button doesn't do anything when AF is engaged
+            else
+                tmpPos = obj.FocusSetPos - obj.SwapZ*obj.ZFastStep;
+                tmpPos = min(tmpPos,max(obj.ZLim));
+                obj.FocusSetPos = max(tmpPos,min(obj.ZLim));
+            end
         end
         
         %% TIRF Stage Moving
+        % only allow TIRF stage to be moved if the AF isn't engaged
         function tirfLeftMove(obj,~,~)
-            tmpPos = obj.TirfSetPos - obj.TirfSlowStep;
-            tmpPos = min(tmpPos,max(obj.TirfLim));
-            obj.TirfSetPos = max(tmpPos,min(obj.TirfLim));
+            if ~obj.AfOn
+                tmpPos = obj.TirfSetPos - obj.TirfSlowStep;
+                tmpPos = min(tmpPos,max(obj.TirfLim));
+                obj.TirfSetPos = max(tmpPos,min(obj.TirfLim));
+            end
         end
         
         function tirfRightMove(obj,~,~)
-            tmpPos = obj.TirfSetPos + obj.TirfSlowStep;
-            tmpPos = min(tmpPos,max(obj.TirfLim));
-            obj.TirfSetPos = max(tmpPos,min(obj.TirfLim));
+            if ~obj.AfOn
+                tmpPos = obj.TirfSetPos + obj.TirfSlowStep;
+                tmpPos = min(tmpPos,max(obj.TirfLim));
+                obj.TirfSetPos = max(tmpPos,min(obj.TirfLim));
+            end
         end
         
         function tirfFastLeftMove(obj,~,~)
-            tmpPos = obj.TirfSetPos - obj.TirfFastStep;
-            tmpPos = min(tmpPos,max(obj.TirfLim));
-            obj.TirfSetPos = max(tmpPos,min(obj.TirfLim));
+            if ~obj.AfOn
+                tmpPos = obj.TirfSetPos - obj.TirfFastStep;
+                tmpPos = min(tmpPos,max(obj.TirfLim));
+                obj.TirfSetPos = max(tmpPos,min(obj.TirfLim));
+            end
         end
         
         function tirfFastRightMove(obj,~,~)
-            tmpPos = obj.TirfSetPos + obj.TirfFastStep;
-            tmpPos = min(tmpPos,max(obj.TirfLim));
-            obj.TirfSetPos = max(tmpPos,min(obj.TirfLim));
+            if ~obj.AfOn
+                tmpPos = obj.TirfSetPos + obj.TirfFastStep;
+                tmpPos = min(tmpPos,max(obj.TirfLim));
+                obj.TirfSetPos = max(tmpPos,min(obj.TirfLim));
+            end
         end
         
         %% CHANGING THE LOOK OF IMAGES
@@ -2449,13 +2562,13 @@ classdef SimpleMscopeGUI < handle
             inputNumbers = str2num(inputString);
             if ~any(isnan(inputNumbers)) && length(inputNumbers) == 4
                 roi = round(inputNumbers);
-                roi(1) = max(roi(1),1); 
+                roi(1) = max(roi(1),1);
                 roi(2) = min(roi(2),1280);
                 roi(2) = max(roi(2),roi(1) + 1);
                 roi(3) = max(roi(3),1);
                 roi(4) = min(roi(4),1024);
-                roi(4) = max(roi(4),roi(3) + 1);                
-                obj.AfRoi = roi;       
+                roi(4) = max(roi(4),roi(3) + 1);
+                obj.AfRoi = roi;
                 obj.AfCamCon.setRoi(obj.AfRoi);
             end
             set(src,'String',num2str(obj.AfRoi));
@@ -2463,37 +2576,37 @@ classdef SimpleMscopeGUI < handle
         
         function setAfExposure(obj,src,~)
             inputTimeString = get(src,'String');
-                if strncmp(fliplr(inputTimeString),'sm',2)
-                    inputTimeString = inputTimeString(1:end-2);
-                end
-                inputTime = str2double(inputTimeString);
-                if ~isnan(inputTime)
-                    % make sure the time is valid here
-                    obj.AfExposure = min(inputTime, obj.AF_EXP_MAX);
-                    obj.AfExposure = max(obj.AfExposure,0);
-                    [trueExposure, trueFrameRate] = obj.AfCamCon.setExpFrame(obj.AfExposure,obj.AfFrameRate);                   
-                    obj.AfExposure = trueExposure;
-                    obj.AfFrameRate = trueFrameRate;
-                end
-                set(src,'String',sprintf('%.2f ms',obj.AfExposure));
-                set(obj.AfFrameRateH,'String',sprintf('%.1f Hz',obj.AfFrameRate));
+            if strncmp(fliplr(inputTimeString),'sm',2)
+                inputTimeString = inputTimeString(1:end-2);
+            end
+            inputTime = str2double(inputTimeString);
+            if ~isnan(inputTime)
+                % make sure the time is valid here
+                obj.AfExposure = min(inputTime, obj.AF_EXP_MAX);
+                obj.AfExposure = max(obj.AfExposure,0);
+                [trueExposure, trueFrameRate] = obj.AfCamCon.setExpFrame(obj.AfExposure,obj.AfFrameRate);
+                obj.AfExposure = trueExposure;
+                obj.AfFrameRate = trueFrameRate;
+            end
+            set(src,'String',sprintf('%.2f ms',obj.AfExposure));
+            set(obj.AfFrameRateH,'String',sprintf('%.1f Hz',obj.AfFrameRate));
         end
         
         function setAfFrameRate(obj,src,~)
             inputRateString = get(src,'String');
-                if strncmp(fliplr(inputRateString),'zH',2)
-                    inputRateString = inputRateString(1:end-2);
-                end
-                inputRate = str2double(inputRateString);
-                if ~isnan(inputRate)
-                    % make sure the time is valid here
-                    obj.AfFrameRate = max(inputRate,0);
-                    [trueExposure, trueFrameRate] = obj.AfCamCon.setExpFrame(obj.AfExposure,obj.AfFrameRate);                   
-                    obj.AfExposure = trueExposure;
-                    obj.AfFrameRate = trueFrameRate;
-                end
-                set(src,'String',sprintf('%.1f Hz',obj.AfFrameRate));
-                set(obj.AfExposureH,'String',sprintf('%.2f ms',obj.AfExposure));
+            if strncmp(fliplr(inputRateString),'zH',2)
+                inputRateString = inputRateString(1:end-2);
+            end
+            inputRate = str2double(inputRateString);
+            if ~isnan(inputRate)
+                % make sure the time is valid here
+                obj.AfFrameRate = max(inputRate,0);
+                [trueExposure, trueFrameRate] = obj.AfCamCon.setExpFrame(obj.AfExposure,obj.AfFrameRate);
+                obj.AfExposure = trueExposure;
+                obj.AfFrameRate = trueFrameRate;
+            end
+            set(src,'String',sprintf('%.1f Hz',obj.AfFrameRate));
+            set(obj.AfExposureH,'String',sprintf('%.2f ms',obj.AfExposure));
         end
         
         function updateAfFig(obj)
@@ -2503,8 +2616,96 @@ classdef SimpleMscopeGUI < handle
             set(obj.AfLineH,...
                 'XData',[obj.AfRoi(1), obj.AfRoi(2), obj.AfRoi(2), obj.AfRoi(1), obj.AfRoi(1)],...
                 'YData',[obj.AfRoi(3), obj.AfRoi(3), obj.AfRoi(4), obj.AfRoi(4), obj.AfRoi(3)]);
-            set(obj.AfCentPosH,'String',sprintf('Centroid: %.2f px',obj.AfCamCon.centroidLast(obj.AfFramesCentroid)));               
+            set(obj.AfCentPosH,'String',sprintf('Centroid: %.2f px',obj.AfCamCon.centroidLast(obj.AfFramesCentroid)));
         end % updateAfFig
+        
+        %% AUTOFOCUS LOGIC
+        function afEngage(obj,src,~)
+            if (get(src,'Value') == 1 && obj.State == 1) % only calibrate in video mode
+                % turn the autofocus on
+                if ~obj.AfOn
+                    obj.AfOn = 1;
+                    % all the autofocus turning on logic
+                    set(obj.AfEngageFigH,'Visible','on'); % display the status figure window
+                    % calculate the appropriate AF camera settings
+                    if obj.AlexMode
+                        if obj.AlexSelection == 2 || obj.AlexSelection == 5
+                            % three colour alex
+                            alexFactor = 3;
+                        else
+                            % two colour alex
+                            alexFactor = 2;
+                        end
+                    else
+                        alexFactor = 1;
+                    end
+                    cycleTime = obj.FrameTime*alexFactor; % time in milleseconds for an illumination cycle
+                    afAvgTime = cycleTime; % time for autofocus to average over
+                    while afAvgTime < obj.AF_AVG_MIN
+                        afAvgTime = afAvgTime + cycleTime;
+                    end
+                    afFramesInAvgTime = min(round(afAvgTime*1e-3*obj.AfFrameRate),obj.AF_FRAMES_MAX);
+                    obj.AfFramesCentroid = afFramesInAvgTime;
+                    % we now know how many frames to take from the
+                    % autofocus to make sure we get a whole number of
+                    % cycles lasting greater than obj.AF_AVG_MIN ms
+                    
+                    % now pause for the autofocus camera to acquire enough
+                    % frames
+                    pauseTime = 2*obj.AfFramesCentroid/obj.AfFrameRate;
+                    
+                    oldstate = pause('on');
+                    pause(pauseTime);
+                    % and set the target centroid
+                    obj.AfCentroidTarget = obj.AfCamCon.centroidLast(obj.AfFramesCentroid);
+                    obj.AfOriginalInten = obj.AfCamCon.getRoiIntensity;
+                    % move the stage to the calibration position, allow it to settle
+                    % and work out the response gradient in nm per pixels
+                    obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos + obj.AfCalibrationStep);
+                    pause(pauseTime); % pause to let stage settle and gather data
+                    obj.AfGradient = obj.AfCalibrationStep/(obj.AfCamCon.centroidLast(obj.AfFramesCentroid) - obj.AfCentroidTarget);
+                    
+                    % return home
+                    obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
+                    
+                    % start the autofocus timer
+                    set(obj.TimerAf,'period',round(obj.AfFramesCentroid/obj.AfFrameRate));
+                    start(obj.TimerAf);
+                    
+                    % hide the modal window
+                    pause(oldstate);
+                    set(obj.AfEngageFigH,'visible','off');
+                end
+            else % turn the autofocus off if it is already on
+                try
+                    stop(obj.TimerAf);
+                catch
+                end
+                obj.AfOn = 0;
+                set(src,'Value',0)
+            end
+        end % afEngage
+        
+        function afCalcAndCommand(obj)
+            % timer function for the autofocus
+            % check that the autofocus image is bright enough to use
+            if obj.AfCamCon.getRoiIntensity > obj.AF_INTEN_MIN*obj.AfOriginalInten
+                % get the autofocus centroid reading
+                currentCentroid = obj.AfCamCon.centroidLast(obj.AfFramesCentroid);
+                centroidChange = currentCentroid - obj.AfCentroidTarget;
+                % calculate the position to change 
+                positionChange = centroidChange*obj.AfGradient;
+                fprintf('\nAF detects a change of %.2f nm and is correcting it\n',1e6*positionChange);
+                % update the position we are aiming for
+                obj.FocusSetPos = obj.FocusSetPos - positionChange * obj.AF_FEEDBACK_FAC;
+                obj.FocusSetPos = min(obj.FocusSetPos,max(obj.ZLim));
+                obj.FocusSetPos = max(obj.FocusSetPos,min(obj.ZLim));
+                % command the stage to move
+                obj.StageCon.setPosition(obj.FocusStage,obj.FocusSetPos);
+                obj.FocusLastPos = obj.FocusSetPos;
+            end 
+        end
+        
         %% ADVANCED SETTINGS
         
         function setGain(obj,src,~)
@@ -2787,6 +2988,10 @@ classdef SimpleMscopeGUI < handle
                 stop(obj.TimerAfFig);
             catch
             end
+            try
+                stop(obj.TimerAf);
+            catch
+            end
             
             obj.CamCon.delete; % gracefully disconnect from the camera
             obj.StageCon.delete;
@@ -2795,6 +3000,7 @@ classdef SimpleMscopeGUI < handle
             delete(obj.MainFigH); % and delete the figure
             delete(obj.AdvFigH); % and delete down the advanced settings
             delete(obj.AfFigH);
+            delete(obj.AfEngageFigH);
         end
         
     end

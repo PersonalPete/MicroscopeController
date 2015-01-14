@@ -34,6 +34,13 @@ classdef AfCamController < handle
             frameData = frameData(1:obj.HOR_MAX,1:obj.VER_MAX);
         end % getLastFrame
         
+        function roiIntensity = getRoiIntensity(obj)
+            frameData = obj.getLastFrame;
+            roi = obj.Roi;
+            frameData = frameData(roi(1):roi(2),roi(3):roi(4));
+            roiIntensity = sum(double(frameData(:)));
+        end % getRoiIntensity
+        
         function [trueExpTime, trueFrameRate] = setExpFrame(obj, expTime, frameRate)
             [trueExpTime, trueFrameRate] = afSetExpFrame(obj.CamH,expTime,frameRate);
             obj.ExpTime = trueExpTime; obj.FrameRate = trueFrameRate;
