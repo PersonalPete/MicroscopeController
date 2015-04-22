@@ -259,6 +259,14 @@ classdef SimpleMscopeGUI < handle
         AlexSelection = 1; % this is which alex type (R-G or R-G-N etc...) is selected
         % 1:Green-Red 2:Green-Red-NIR 3:Green-NIR 4:Red-NIR 5:NIR-Red-Green
         
+        % define the alex sequences used - rows for each laser
+        ALEX_GR = [1 0; 0 1; 0 0];
+        ALEX_GRN = [0 1 0; 0 0 1; 1 0 0];
+        ALEX_GN = [0 1; 0 0; 1 0];
+        ALEX_RN = [0 0; 0 1; 1 0];
+        ALEX_NRG = [1 0 0; 0 0 1; 0 0 1];
+        
+        
         FrameTime = 100; % (\ms) frame time actually set
         
         % Flag for state
@@ -2965,18 +2973,39 @@ classdef SimpleMscopeGUI < handle
             try
                 boxSize = 50;
                 fullPathName = obj.CamCon.setSpool(obj.SpoolPath,obj.SpoolName,obj.SpoolFrames);
-                if length(fullPathName) > boxSize
-                    fullPathName = ['...' fullPathName(max(1,end-boxSize):end)];
+                if length(fullPathName) > boxSize % just for the on screen display
+                    displayPathName = ['...' fullPathName(max(1,end-boxSize):end)];
                 end
-                set(obj.MessageH,'String',sprintf('%s.fits',fullPathName),...
+                set(obj.MessageH,'String',sprintf('%s.fits',displayPathName),...
                     'BackgroundColor',obj.COLOR_STAT_WARN);
             catch
                 set(obj.MessageH,'String','SPOOL ERROR','BackgroundColor',obj.COLOR_STAT_ERR)
             end
             
+            %% save the metadata
+            frTime = obj.FrameTime/1000; % convert to seconds
+            if ~obj.AlexMode
+                alexSequence = [1;1;1];
+            else
+                if obj.AlexSelection == 1 % Green-Red ALEX
+                    alexSequence = obj.ALEX_GR;
+                elseif obj.AlexSelection == 2 % GRN ALEX
+                    alexSequence = obj.ALEX_GRN;
+                elseif obj.AlexSelection == 3 % GN ALEX
+                    alexSequence = obj.ALEX_GN;
+                elseif obj.AlexSelection == 4 % RN ALEX
+                    alexSequence = obj.ALEX_RN;
+                else % NRG ALEX
+                    alexSequence = obj.ALEX_NRG;
+                end
+            end
+            save(fullPathName,'frTime','alexSequence');
+                    
+            
             %% start the video
             if strcmp(obj.CamCon.getStringStatus,'IDLE')
                 try
+                    % actually begin acquisition
                     obj.CamCon.startAcquiring
                 catch
                     set(obj.MessageH,'String','CAMERA ERROR - STOP AND RETRY',...
