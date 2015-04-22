@@ -50,10 +50,18 @@ classdef CameraController < handle
             % We need to open the connection to the camera and set some
             % defaults
             fprintf('\nInitialising Camera...\n')
-            if initialiseCamera == obj.DRV_SUCCESS
+            initialiseReturn = initialiseCamera;
+            if  initialiseReturn == obj.DRV_SUCCESS
                 fprintf('Success\n')
             else
-                MException('MScope:AndorErr','Camera Connection failed\nRESTART MATLAB AND TRY AGAIN').throw;
+                fprintf('Andor error code: %i\n',initialiseReturn);
+                initialiseReturn = initialiseCamera;
+                if initialiseReturn ~= obj.DRV_SUCCESS
+                    fprintf('Retrying... Andor error code: %i\n',initialiseReturn);
+                    MException('MScope:AndorErr','Camera Connection failed\nRESTART MATLAB AND TRY AGAIN').throw;             
+                else
+                    fprintf('Retrying... Success\n')
+                end
             end
             % Apply default settings
             if initialSettings ~= obj.DRV_SUCCESS

@@ -76,7 +76,9 @@ classdef SimpleMscopeGUI < handle
         
         % handles to displayed objects - i.e. without callbacks
         %% Autofocus settings ui handles
-        AfRoi = [190, 240, 150, 190];
+        % THESE ARE NOT FOR THE WORKINGS OF AF - SEE AUTOFOCUS GAIN
+        % SETTINGS
+        AfRoi = [100  200   40  231];
         AfFigOpenH;
         AfFigH;
         AfFigPos = [0.5 0.15 0.2 0.4];
@@ -285,18 +287,22 @@ classdef SimpleMscopeGUI < handle
         % CONSTANTS
         AUTO_FACTOR = 3; % auto scales between the minimum and AUTO_FACTOR*(mean(data - min)) + min
         
-        MAX_DATA = 2^16 - 1; % for the 16-bit data we are taking
+        MAX_DATA = 2^14 - 1; % for the 14-bit data we are taking
         
         EMGAIN_MAX = 2000; % from the Andor SDK and the settings we apply (and from my knowledge of the camera)
         MAX_BIN = 8; % 8x8 binning is largest allowed by this software
         MAX_XYPIX = 512; % there only exist 512 pixels on our chip
         
+        %% AUTOFOCUS GAIN SETTINGS
+        
         AF_EXP_MAX = 40; % (/ms)
-        AF_AVG_MIN = 1000; % (/ms) Minimum autofocus accumulation time
+        AF_AVG_MIN = 500; % (/ms) Minimum autofocus accumulation time 24.03.15 - changed from 1000 ms
         AF_FRAMES_MAX = 900; % Maximum number of frames the autofocus can average over
-        AF_FEEDBACK_FAC = 0.5; % fraction of the suggested move to make
+        AF_FEEDBACK_FAC = 0.5; % fraction of the suggested move to make -24.03.15 - changed from 0.5
         AF_FEEDBACK_FAC_ACQ = 0.05; % autofocus works slower during spooling
         AF_INTEN_MIN = 0.5; % fraction of the initial brightness required for AF to try and correct
+        
+        %% LOOK OF CONTROLLER
         
         % define some useful constants for customising the look
         FigPos = [0.0, 0.4, 0.5, 0.6]; % outer position of the main figure
@@ -1879,7 +1885,7 @@ classdef SimpleMscopeGUI < handle
         function updatePowerMeterReading(obj)
             % call this to update the power meter reading (on a timer)
             try
-                if obj.State == 0;
+                if obj.State > -1 % CHANGE HERE TO ALWAYS READ
                     set(obj.PowerMeterReadH,'String',sprintf('%.3f mW',1000*obj.PowerMeterCon.measurePower(obj.PowerMeterWave)));
                 else
                     set(obj.PowerMeterReadH,'String','-');
