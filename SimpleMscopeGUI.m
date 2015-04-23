@@ -313,7 +313,7 @@ classdef SimpleMscopeGUI < handle
         %% LOOK OF CONTROLLER
         
         % define some useful constants for customising the look
-        FigPos = [0.0, 0.4, 0.5, 0.6]; % outer position of the main figure
+        FigPos = [0.0, 0.2, 0.8, 0.8]; % outer position of the main figure
         AdvFigPos = [0.4 0.35 0.2 0.3]; % outer position for advanced settings figure
         % [left,bot,widt,heig]
         
@@ -1245,11 +1245,13 @@ classdef SimpleMscopeGUI < handle
                     'YTick',[],...
                     'Xlim',[0 obj.NumDispXPix],...
                     'Ylim',[0 obj.NumDispYPix],...
-                    'CLim',obj.ImageLimits);
+                    'CLim',obj.ImageLimits,...
+                    'HitTest','on');
                 
                 obj.SingleImageH = image('Parent',obj.SinglePlotAxisH,...
                     'CDataMapping','scaled',...
-                    'CData',0);
+                    'CData',0,...
+                    'ButtonDownFcn',@(~,~) obj.zoomHandler);
                 % CData will be defined when we have some
                 
                 %% TIMERS FOR UPDATING
@@ -1296,6 +1298,8 @@ classdef SimpleMscopeGUI < handle
                 % it just makes it invisible instead of really closing it -
                 % so we can 'reopen' it by making it visible again
                 obj.AfFigH = figure('CloseRequestFcn',@(~,~) obj.closeAfFig,...
+                    'KeyPressFcn',@obj.keysMoveStages,...
+                    'DefaultUiControlKeyPressFcn',@obj.keysMoveStages,...
                     'Color',obj.COLOR_BGD,...
                     'ColorMap',gray(obj.MAX_DATA),...
                     'DockControls','off',...
@@ -3000,7 +3004,11 @@ classdef SimpleMscopeGUI < handle
                 end
             end
             save(fullPathName,'frTime','alexSequence');
-                    
+                 
+            % stop the ALEX, to get deterministic first frame
+            if obj.AlexMode
+                obj.LaserCon.stopSignal;
+            end
             
             %% start the video
             if strcmp(obj.CamCon.getStringStatus,'IDLE')
@@ -3048,6 +3056,46 @@ classdef SimpleMscopeGUI < handle
             set(obj.StartCaptH,'enable','on','Value',0);
         end
         
+        % zooming figure when clicking
+        function zoomHandler(obj)
+            % we can get at the last point clicked using the CurrentPoint
+            % property of UnAxes
+            
+            selectionType = get(obj.MainFigH,'SelectionType');
+            
+            if strcmp(selectionType,'open')
+                % we have a double click, which means zoom in
+                currentPoint = get(obj.SinglePlotAxisH,'CurrentPoint');
+                currentX = currentPoint(2,1);
+                currentY = currentPoint(2,2);
+                currentXlim = get(obj.SinglePlotAxisH,'XLim');
+                deltaX = currentXlim(2) - currentXlim(1);
+                currentYlim = get(obj.SinglePlotAxisH,'YLim');
+                deltaY = currentYlim(2) - currentYlim(1);
+                
+                posMinX = 0 + deltaX/4;
+                posMaxX = obj.NumDispXPix - deltaX/4;
+                currentX = min(currentX,posMaxX);
+                currentX = max(currentX,posMinX);
+                
+                posMinY = 0 + deltaY/4;
+                posMaxY = obj.NumDispYPix - deltaX/4;
+                currentY = min(currentY,posMaxY);
+                currentY = max(currentY,posMinY);
+                
+                minX = currentX - deltaX/4;
+                maxX = currentX + deltaX/4;
+                minY = currentY - deltaY/4;
+                maxY = currentY + deltaY/4;
+                
+                set(obj.SinglePlotAxisH,'XLim',[minX, maxX],...
+                    'YLim',[minY, maxY]);
+            elseif strcmp(selectionType,'alt')
+                % we have a right click, which means reset zoom
+                set(obj.SinglePlotAxisH,'Xlim',[0 obj.NumDispXPix],...
+                    'YLim',[0 obj.NumDispYPix]);
+            end
+        end
         %% CLEANUP
         % clean up function for closing the figure (that gracefully closes
         % the camera)
