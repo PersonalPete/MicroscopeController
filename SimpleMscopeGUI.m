@@ -308,7 +308,7 @@ classdef SimpleMscopeGUI < handle
         AF_FRAMES_MAX = 900; % Maximum number of frames the autofocus can average over
         AF_FEEDBACK_FAC = 0.5; % fraction of the suggested move to make -24.03.15 - changed from 0.5
         AF_FEEDBACK_FAC_ACQ = 0.05; % autofocus works slower during spooling
-        AF_INTEN_MIN = 0.5; % fraction of the initial brightness required for AF to try and correct
+        AF_INTEN_MIN = 0.05; % fraction of the initial brightness required for AF to try and correct
         
         %% LOOK OF CONTROLLER
         
